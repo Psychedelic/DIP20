@@ -20,10 +20,10 @@ import ExperimentalCycles "mo:base/ExperimentalCycles";
 
 shared(msg) actor class Token(
     _logo: Text,
-    _name: Text,
+    _name: Text, 
     _symbol: Text,
-    _decimals: Nat8,
-    _totalSupply: Nat,
+    _decimals: Nat8, 
+    _totalSupply: Nat, 
     _owner: Principal,
     _fee: Nat
     ) {
@@ -43,6 +43,7 @@ shared(msg) actor class Token(
     type TxReceipt = Result.Result<Nat, {
         #InsufficientBalance;
         #InsufficientAllowance;
+        #Unauthorized;
     }>;
 
     private stable var owner_ : Principal = _owner;
@@ -129,10 +130,10 @@ shared(msg) actor class Token(
     };
 
     /*
-    *   Core interfaces:
-    *       update calls:
+    *   Core interfaces: 
+    *       update calls: 
     *           transfer/transferFrom/approve
-    *       query calls:
+    *       query calls: 
     *           logo/name/symbol/decimal/totalSupply/balanceOf/allowance/getMetadata
     *           historySize/getTransaction/getTransactions
     */
@@ -170,7 +171,7 @@ shared(msg) actor class Token(
         return #ok(txid);
     };
 
-    /// Allows spender to withdraw from your account multiple times, up to the value amount.
+    /// Allows spender to withdraw from your account multiple times, up to the value amount. 
     /// If this function is called again it overwrites the current allowance with value.
     public shared(msg) func approve(spender: Principal, value: Nat) : async TxReceipt {
         if(_balanceOf(msg.caller) < fee) { return #err(#InsufficientBalance); };
@@ -194,6 +195,28 @@ shared(msg) actor class Token(
         return #ok(txid);
     };
 
+    public shared(msg) func mint(to: Principal, amount: Nat): async TxReceipt {
+        if(msg.caller != owner_) {
+            return #err(#Unauthorized);
+        };
+        let to_balance = _balanceOf(to);
+        totalSupply_ += amount;
+        balances.put(to, to_balance + amount);
+        let txid = addRecord(?msg.caller, #mint, blackhole, to, amount, 0, Time.now(), #succeeded);
+        return #ok(txid);
+    };
+
+    public shared(msg) func burn(amount: Nat): async TxReceipt {
+        let from_balance = _balanceOf(msg.caller);
+        if(from_balance < amount) {
+            return #err(#InsufficientBalance);
+        };
+        totalSupply_ -= amount;
+        balances.put(msg.caller, from_balance - amount);
+        let txid = addRecord(?msg.caller, #burn, msg.caller, blackhole, amount, 0, Time.now(), #succeeded);
+        return #ok(txid);
+    };
+
     public query func logo() : async Text {
         return logo_;
     };
@@ -212,6 +235,10 @@ shared(msg) actor class Token(
 
     public query func totalSupply() : async Nat {
         return totalSupply_;
+    };
+
+    public query func getTokenFee() : async Nat {
+        return fee;
     };
 
     public query func balanceOf(who: Principal) : async Nat {
@@ -356,7 +383,7 @@ shared(msg) actor class Token(
         for ((k, v) in allowances.entries()) {
             size += v.size();
         };
-        return size;
+        return size;   
     };
 
     public query func getUserApprovals(who : Principal) : async [(Principal, Nat)] {
