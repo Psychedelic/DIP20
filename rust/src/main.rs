@@ -5,12 +5,26 @@
 * Maintainer : DFinance Team <hello@dfinance.ai>
 * Stability  : Experimental
 */
-use candid::{candid_method, CandidType, Deserialize};
-use ic_kit::{ic , Principal};
+use candid::{candid_method, CandidType, Deserialize, Int, Nat};
+use cap_sdk::{handshake, insert, Event, IndefiniteEvent, TypedEvent};
+use cap_std::dip20::cap::DIP20Details;
+use cap_std::dip20::{Operation, TransactionStatus, TxRecord};
 use ic_cdk_macros::*;
+use ic_kit::{ic, Principal};
 use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::convert::Into;
 use std::iter::FromIterator;
 use std::string::String;
+
+#[derive(CandidType, Default, Deserialize)]
+pub struct TxLog {
+    pub ie_records: VecDeque<IndefiniteEvent>,
+}
+
+pub fn tx_log<'a>() -> &'a mut TxLog {
+    ic_kit::ic::get_mut::<TxLog>()
+}
 
 #[derive(Deserialize, CandidType, Clone, Debug)]
 struct Metadata {
@@ -52,29 +66,12 @@ impl Default for Metadata {
 
 type Balances = HashMap<Principal, u64>;
 type Allowances = HashMap<Principal, HashMap<Principal, u64>>;
-type Ops = Vec<OpRecord>;
 
 #[derive(Deserialize, CandidType)]
 struct UpgradePayload {
     metadata: Metadata,
     balance: Vec<(Principal, u64)>,
     allow: Vec<(Principal, Vec<(Principal, u64)>)>,
-}
-
-#[derive(CandidType, Clone, Copy, Debug, PartialEq)]
-enum Operation {
-    Mint,
-    Burn,
-    Transfer,
-    TransferFrom,
-    Approve,
-}
-
-#[derive(CandidType, Clone, Copy, Debug, PartialEq)]
-enum TransactionStatus {
-    Succeeded,
-    Inprogress,
-    Failed,
 }
 
 #[derive(CandidType, Clone, Debug)]
@@ -91,38 +88,13 @@ struct OpRecord {
 }
 
 #[derive(CandidType, Debug, PartialEq)]
-enum TxError {
+pub enum TxError {
     InsufficientBalance,
     InsufficientAllowance,
     Unauthorized,
+    Other,
 }
-type TxReceipt = Result<usize, TxError>;
-
-fn add_record(
-    caller: Option<Principal>,
-    op: Operation,
-    from: Principal,
-    to: Principal,
-    amount: u64,
-    fee: u64,
-    timestamp: u64,
-    status: TransactionStatus,
-) -> usize {
-    let ops = ic::get_mut::<Ops>();
-    let index = ops.len();
-    ops.push(OpRecord {
-        caller,
-        op,
-        index,
-        from,
-        to,
-        amount,
-        fee,
-        timestamp,
-        status,
-    });
-    index
-}
+pub type TxReceipt = Result<usize, TxError>;
 
 #[init]
 #[candid_method(init)]
@@ -134,6 +106,7 @@ fn init(
     total_supply: u64,
     owner: Principal,
     fee: u64,
+    cap: Principal,
 ) {
     let metadata = ic::get_mut::<Metadata>();
     metadata.logo = logo;
@@ -143,12 +116,13 @@ fn init(
     metadata.total_supply = total_supply;
     metadata.owner = owner;
     metadata.fee = fee;
+    handshake(1_000_000, Some(cap));
     let balances = ic::get_mut::<Balances>();
     balances.insert(owner, total_supply);
     let _ = add_record(
-        Some(owner),
+        None,
         Operation::Mint,
-        Principal::from_text("aaaaa-aa").unwrap(),
+        owner,
         owner,
         total_supply,
         0,
@@ -182,7 +156,7 @@ fn _charge_fee(user: Principal, fee_to: Principal, fee: u64) {
 
 #[update(name = "transfer")]
 #[candid_method(update)]
-fn transfer(to: Principal, value: u64) -> TxReceipt {
+async fn transfer(to: Principal, value: u64) -> TxReceipt {
     let from = ic::caller();
     let metadata = ic::get::<Metadata>();
     if balance_of(from) < value + metadata.fee {
@@ -190,7 +164,8 @@ fn transfer(to: Principal, value: u64) -> TxReceipt {
     }
     _charge_fee(from, metadata.fee_to, metadata.fee);
     _transfer(from, to, value);
-    let txid = add_record(
+
+    add_record(
         None,
         Operation::Transfer,
         from,
@@ -199,19 +174,19 @@ fn transfer(to: Principal, value: u64) -> TxReceipt {
         metadata.fee,
         ic::time(),
         TransactionStatus::Succeeded,
-    );
-    Ok(txid)
+    )
+    .await
 }
 
 #[update(name = "transferFrom")]
 #[candid_method(update, rename = "transferFrom")]
-fn transfer_from(from: Principal, to: Principal, value: u64) -> TxReceipt {
+async fn transfer_from(from: Principal, to: Principal, value: u64) -> TxReceipt {
     let owner = ic::caller();
     let from_allowance = allowance(from, owner);
     let metadata = ic::get::<Metadata>();
     if from_allowance < value + metadata.fee {
         return Err(TxError::InsufficientAllowance);
-    } 
+    }
     let from_balance = balance_of(from);
     if from_balance < value + metadata.fee {
         return Err(TxError::InsufficientBalance);
@@ -239,7 +214,7 @@ fn transfer_from(from: Principal, to: Principal, value: u64) -> TxReceipt {
             assert!(false);
         }
     }
-    let txid = add_record(
+    add_record(
         Some(owner),
         Operation::TransferFrom,
         from,
@@ -248,13 +223,13 @@ fn transfer_from(from: Principal, to: Principal, value: u64) -> TxReceipt {
         metadata.fee,
         ic::time(),
         TransactionStatus::Succeeded,
-    );
-    Ok(txid)
+    )
+    .await
 }
 
 #[update(name = "approve")]
 #[candid_method(update)]
-fn approve(spender: Principal, value: u64) -> TxReceipt {
+async fn approve(spender: Principal, value: u64) -> TxReceipt {
     let owner = ic::caller();
     let metadata = ic::get::<Metadata>();
     if balance_of(owner) < metadata.fee {
@@ -287,7 +262,7 @@ fn approve(spender: Principal, value: u64) -> TxReceipt {
             }
         }
     }
-    let txid = add_record(
+    add_record(
         None,
         Operation::Approve,
         owner,
@@ -296,13 +271,13 @@ fn approve(spender: Principal, value: u64) -> TxReceipt {
         metadata.fee,
         ic::time(),
         TransactionStatus::Succeeded,
-    );
-    Ok(txid)
+    )
+    .await
 }
 
 #[update(name = "mint")]
 #[candid_method(update, rename = "mint")]
-fn mint(to: Principal, amount: u64) -> TxReceipt {
+async fn mint(to: Principal, amount: u64) -> TxReceipt {
     let caller = ic::caller();
     let metadata = ic::get_mut::<Metadata>();
     if caller != metadata.owner {
@@ -312,23 +287,23 @@ fn mint(to: Principal, amount: u64) -> TxReceipt {
     let balances = ic::get_mut::<Balances>();
     balances.insert(to, to_balance + amount);
     metadata.total_supply += amount;
-    
-    let txid = add_record(
-        Some(caller),
+
+    add_record(
+        None,
         Operation::Mint,
-        Principal::from_text("aaaaa-aa").unwrap(),
+        caller,
         to,
         amount,
         0,
         ic::time(),
         TransactionStatus::Succeeded,
-    );
-    Ok(txid)
+    )
+    .await
 }
 
 #[update(name = "burn")]
 #[candid_method(update, rename = "burn")]
-fn burn(amount: u64) -> TxReceipt {
+async fn burn(amount: u64) -> TxReceipt {
     let caller = ic::caller();
     let metadata = ic::get_mut::<Metadata>();
     let caller_balance = balance_of(caller);
@@ -338,17 +313,18 @@ fn burn(amount: u64) -> TxReceipt {
     let balances = ic::get_mut::<Balances>();
     balances.insert(caller, caller_balance - amount);
     metadata.total_supply -= amount;
-    let txid = add_record(
-        Some(caller),
+
+    add_record(
+        None,
         Operation::Burn,
         caller,
-        Principal::from_text("aaaaa-aa").unwrap(),
+        caller,
         amount,
         0,
         ic::time(),
         TransactionStatus::Succeeded,
-    );
-    Ok(txid)
+    )
+    .await
 }
 
 #[update(name = "setLogo")]
@@ -457,72 +433,65 @@ fn get_metadata() -> Metadata {
 #[query(name = "historySize")]
 #[candid_method(query, rename = "historySize")]
 fn history_size() -> usize {
-    let ops = ic::get::<Ops>();
-    ops.len()
+    // history handling needs fixing after CAP SDK is ready
+    unimplemented!()
 }
 
-#[query(name = "getTransaction")]
-#[candid_method(query, rename = "getTransaction")]
-fn get_transaction(index: usize) -> OpRecord {
-    let ops = ic::get::<Ops>();
-    ops[index].clone()
+#[update(name = "getTransaction")]
+#[candid_method(update, rename = "getTransaction")]
+async fn get_transaction(_index: usize) -> OpRecord {
+    // let res = cap_sdk::get_transaction(_index as u64)
+    //     .await
+    //     .expect("unable to retrieve transaction from CAP");
+    // ic_cdk::print(format!("{:?}", res));
+    // OpRecord{
+    //     caller: Some(Principal::anonymous()),
+    //     op: Operation::Mint,
+    //     index: 0,
+    //     from: Principal::anonymous(),
+    //     to: Principal::anonymous(),
+    //     amount: 1,
+    //     fee: 2,
+    //     timestamp: 3,
+    //     status: TransactionStatus::Succeeded,
+    //}
+
+    // history handling needs fixing after CAP SDK is ready
+    unimplemented!();
 }
 
 #[query(name = "getTransactions")]
 #[candid_method(query, rename = "getTransactions")]
-fn get_transactions(start: usize, limit: usize) -> Vec<OpRecord> {
-    let mut ret: Vec<OpRecord> = Vec::new();
-    let ops = ic::get::<Ops>();
-    let mut i = start;
-    while i < start + limit && i < ops.len() {
-        ret.push(ops[i].clone());
-        i += 1;
-    }
-    ret
+fn get_transactions(_start: usize, _limit: usize) -> Vec<OpRecord> {
+    // history handling needs fixing after CAP SDK is ready
+    unimplemented!()
 }
 
 #[query(name = "getUserTransactionAmount")]
 #[candid_method(query, rename = "getUserTransactionAmount")]
-fn get_user_transaction_amount(a: Principal) -> usize {
-    let mut res = 0;
-    let ops = ic::get::<Ops>();
-    for i in ops.clone() {
-        if i.caller == Some(a) || i.from == a || i.to == a {
-            res += 1;
-        }
-    }
-    res
+fn get_user_transaction_amount(_user: Principal) -> usize {
+    // history handling needs fixing after CAP SDK is ready
+    unimplemented!()
 }
 
 #[query(name = "getUserTransactions")]
 #[candid_method(query, rename = "getUserTransactions")]
-fn get_user_transactions(a: Principal, start: usize, limit: usize) -> Vec<OpRecord> {
-    let ops = ic::get::<Ops>();
-    let mut res: Vec<OpRecord> = Vec::new();
-    let mut index: usize = 0;
-    for i in ops.clone() {
-        if i.caller == Some(a) || i.from == a || i.to == a {
-            if index >= start && index < start + limit {
-                res.push(i);
-            }
-            index += 1;
-        }
-    }
-    res
+fn get_user_transactions(_user: Principal, _start: usize, _limit: usize) -> Vec<OpRecord> {
+    // history handling needs fixing after CAP SDK is ready
+    unimplemented!()
 }
 
 #[query(name = "getTokenInfo")]
 #[candid_method(query, rename = "getTokenInfo")]
 fn get_token_info() -> TokenInfo {
     let metadata = ic::get::<Metadata>().clone();
-    let ops = ic::get::<Ops>();
     let balance = ic::get::<Balances>();
 
     return TokenInfo {
         metadata: metadata.clone(),
         fee_to: metadata.fee_to,
-        history_size: ops.len(),
-        deploy_time: ops[0].timestamp,
+        history_size: 0, // history handling needs fixing after CAP SDK is ready
+        deploy_time: 0,  // history handling needs fixing after CAP SDK is ready,
         holder_number: balance.len(),
         cycles: ic::balance(),
     };
@@ -574,183 +543,355 @@ fn main() {
     std::print!("{}", __export_service());
 }
 
-// TODO: fix upgrade functions
 #[pre_upgrade]
 fn pre_upgrade() {
-    let metadata = ic::get::<Metadata>().clone();
-    let mut balance = Vec::new();
-    // let mut allow: Vec<(Principal, Vec<(Principal, u64)>)> = Vec::new();
-    let mut allow = Vec::new();
-    for (&k, &v) in ic::get::<Balances>().iter() {
-        balance.push((k, v));
-    }
-    for (k, v) in ic::get::<Allowances>().iter() {
-        let mut item = Vec::new();
-        for (&a, &b) in v.iter() {
-            item.push((a, b));
-        }
-        allow.push((*k, item));
-    }
-    let up = UpgradePayload {
-        metadata,
-        balance,
-        allow,
-    };
-    ic::stable_store((up,)).unwrap();
+    ic::stable_store((ic::get::<Metadata>().clone(),ic::get::<Balances>(), ic::get::<Allowances>(), tx_log())).unwrap();
 }
 
 #[post_upgrade]
 fn post_upgrade() {
-    // There can only be one value in stable memory, currently. otherwise, lifetime error.
-    // https://docs.rs/ic-cdk/0.3.0/ic_cdk/storage/fn.stable_restore.html
-    let (down,): (UpgradePayload,) = ic::stable_restore().unwrap();
+    let (metadata_stored, balances_stored, allowances_stored, tx_log_stored): (Metadata,Balances,Allowances,TxLog) = ic::stable_restore().unwrap();
     let metadata = ic::get_mut::<Metadata>();
-    *metadata = down.metadata;
-    for (k, v) in down.balance {
-        ic::get_mut::<Balances>().insert(k, v);
+    *metadata = metadata_stored;
+
+    let balances = ic::get_mut::<Balances>();
+    *balances = balances_stored;
+
+    let allowances = ic::get_mut::<Allowances>();
+    *allowances = allowances_stored;
+
+    let tx_log = tx_log();
+    *tx_log = tx_log_stored;
+}
+
+async fn add_record(
+    caller: Option<Principal>,
+    op: Operation,
+    from: Principal,
+    to: Principal,
+    amount: u64,
+    fee: u64,
+    timestamp: u64,
+    status: TransactionStatus,
+) -> TxReceipt {
+    insert_into_cap(Into::<IndefiniteEvent>::into(Into::<Event>::into(Into::<
+        TypedEvent<DIP20Details>,
+    >::into(
+        TxRecord {
+            caller,
+            index: Nat::from(0),
+            from,
+            to,
+            amount: Nat::from(amount),
+            fee: Nat::from(fee),
+            timestamp: Int::from(timestamp),
+            status,
+            operation: op,
+        },
+    ))))
+    .await
+}
+
+pub async fn insert_into_cap(ie: IndefiniteEvent) -> TxReceipt {
+    let tx_log = tx_log();
+    if let Some(failed_ie) = tx_log.ie_records.pop_front() {
+        let _ = insert_into_cap_priv(failed_ie).await;
     }
-    for (k, v) in down.allow {
-        let mut inner = HashMap::new();
-        for (a, b) in v {
-            inner.insert(a, b);
-        }
-        ic::get_mut::<Allowances>().insert(k, inner);
+    insert_into_cap_priv(ie).await
+}
+
+async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
+    let insert_res = insert(ie.clone())
+        .await
+        .map(|tx_id| tx_id as usize)
+        .map_err(|_| TxError::Other);
+
+    if insert_res.is_err() {
+        tx_log().ie_records.push_back(ie.clone());
     }
+
+    insert_res
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ic_kit::{mock_principals::{alice, bob, john}, MockContext};
     use assert_panic::assert_panic;
+    use ic_kit::{
+        mock_principals::{alice, bob, john},
+        MockContext,
+    };
 
     fn initialize_tests() {
-      init(
-        String::from("logo"),
-        String::from("token"),
-        String::from("TOKEN"),
-        2,
-        1_000,
-        alice(),
-        1,
-      );
+        init(
+            String::from("logo"),
+            String::from("token"),
+            String::from("TOKEN"),
+            2,
+            1_000,
+            alice(),
+            1,
+        );
     }
 
     #[test]
     fn functionality_test() {
-      MockContext::new()
-      .with_balance(100_000)
-      .with_caller(alice())
-      .inject();
+        MockContext::new()
+            .with_balance(100_000)
+            .with_caller(alice())
+            .inject();
 
-      initialize_tests();
+        initialize_tests();
 
-      // initialization tests
-      assert_eq!(balance_of(alice()), 1_000, "balanceOf did not return the correct value");
-      assert_eq!(total_supply(), 1_000, "totalSupply did not return the correct value");
-      assert_eq!(symbol(), String::from("TOKEN"), "symbol did not return the correct value");
-      assert_eq!(owner(), alice(), "owner did not return the correct value");
-      assert_eq!(name(), String::from("token"), "name did not return the correct value");
-      assert_eq!(get_logo(), String::from("logo"), "getLogo did not return the correct value");
-      assert_eq!(decimals(), 2, "decimals did not return the correct value");
-      assert_eq!(get_holders(0, 10).len(), 1, "get_holders returned the correct amount of holders after initialization");
-      assert_eq!(get_transaction(0).op, Operation::Mint, "get_transaction returnded a Mint operation");
+        // initialization tests
+        assert_eq!(
+            balance_of(alice()),
+            1_000,
+            "balanceOf did not return the correct value"
+        );
+        assert_eq!(
+            total_supply(),
+            1_000,
+            "totalSupply did not return the correct value"
+        );
+        assert_eq!(
+            symbol(),
+            String::from("TOKEN"),
+            "symbol did not return the correct value"
+        );
+        assert_eq!(owner(), alice(), "owner did not return the correct value");
+        assert_eq!(
+            name(),
+            String::from("token"),
+            "name did not return the correct value"
+        );
+        assert_eq!(
+            get_logo(),
+            String::from("logo"),
+            "getLogo did not return the correct value"
+        );
+        assert_eq!(decimals(), 2, "decimals did not return the correct value");
+        assert_eq!(
+            get_holders(0, 10).len(),
+            1,
+            "get_holders returned the correct amount of holders after initialization"
+        );
+        assert_eq!(
+            get_transaction(0).op,
+            Operation::Mint,
+            "get_transaction returnded a Mint operation"
+        );
 
-      let token_info = get_token_info();
-      assert_eq!(token_info.fee_to, Principal::anonymous(), "tokenInfo.fee_to did not return the correct value");
-      assert_eq!(token_info.history_size, 1, "tokenInfo.history_size did not return the correct value");
-      assert!(token_info.deploy_time > 0, "tokenInfo.deploy_time did not return the correct value");
-      assert_eq!(token_info.holder_number, 1, "tokenInfo.holder_number did not return the correct value");
-      assert_eq!(token_info.cycles, 100_000, "tokenInfo.cycles did not return the correct value");
+        let token_info = get_token_info();
+        assert_eq!(
+            token_info.fee_to,
+            Principal::anonymous(),
+            "tokenInfo.fee_to did not return the correct value"
+        );
+        assert_eq!(
+            token_info.history_size, 1,
+            "tokenInfo.history_size did not return the correct value"
+        );
+        assert!(
+            token_info.deploy_time > 0,
+            "tokenInfo.deploy_time did not return the correct value"
+        );
+        assert_eq!(
+            token_info.holder_number, 1,
+            "tokenInfo.holder_number did not return the correct value"
+        );
+        assert_eq!(
+            token_info.cycles, 100_000,
+            "tokenInfo.cycles did not return the correct value"
+        );
 
-      let metadata = get_metadata();
-      assert_eq!(metadata.total_supply, 1_000, "metadata.total_supply did not return the correct value");
-      assert_eq!(metadata.symbol, String::from("TOKEN"), "metadata.symbol did not return the correct value");
-      // assert_eq!(metadata.owner, alice(), "metadata.owner did not return the correct value");
-      assert_eq!(metadata.name, String::from("token"), "metadata.name did not return the correct value");
-      assert_eq!(metadata.logo, String::from("logo"), "metadata.logo did not return the correct value");
-      assert_eq!(metadata.decimals, 2, "metadata.decimals did not return the correct value");
-      assert_eq!(metadata.fee, 1, "metadata.fee did not return the correct value");
-      assert_eq!(metadata.fee_to, Principal::anonymous(), "metadata.fee_to did not return the correct value");
+        let metadata = get_metadata();
+        assert_eq!(
+            metadata.total_supply, 1_000,
+            "metadata.total_supply did not return the correct value"
+        );
+        assert_eq!(
+            metadata.symbol,
+            String::from("TOKEN"),
+            "metadata.symbol did not return the correct value"
+        );
+        // assert_eq!(metadata.owner, alice(), "metadata.owner did not return the correct value");
+        assert_eq!(
+            metadata.name,
+            String::from("token"),
+            "metadata.name did not return the correct value"
+        );
+        assert_eq!(
+            metadata.logo,
+            String::from("logo"),
+            "metadata.logo did not return the correct value"
+        );
+        assert_eq!(
+            metadata.decimals, 2,
+            "metadata.decimals did not return the correct value"
+        );
+        assert_eq!(
+            metadata.fee, 1,
+            "metadata.fee did not return the correct value"
+        );
+        assert_eq!(
+            metadata.fee_to,
+            Principal::anonymous(),
+            "metadata.fee_to did not return the correct value"
+        );
 
-      // set fee test
-      set_fee(2);
-      assert_eq!(2, get_metadata().fee ,"Failed to update the fee_to");
+        // set fee test
+        set_fee(2);
+        assert_eq!(2, get_metadata().fee, "Failed to update the fee_to");
 
-      // set fee_to test
-      set_fee_to(john());
-      assert_eq!(john(), get_metadata().fee_to, "Failed to set fee");
-      set_fee_to(Principal::anonymous());
+        // set fee_to test
+        set_fee_to(john());
+        assert_eq!(john(), get_metadata().fee_to, "Failed to set fee");
+        set_fee_to(Principal::anonymous());
 
-      // set logo
-      set_logo(String::from("new_logo"));
-      assert_eq!("new_logo", get_logo());
+        // set logo
+        set_logo(String::from("new_logo"));
+        assert_eq!("new_logo", get_logo());
 
-      // test transfers
-      let transfer_alice_balance_expected = balance_of(alice()) - 10 - get_metadata().fee;
-      let transfer_bob_balance_expected = balance_of(bob()) + 10;
-      let transfer_john_balance_expected = balance_of(john());
-      let transfer_transaction_amount_expected = get_transactions(0, 10).len() + 1;
-      let transfer_user_transaction_amount_expected = get_user_transaction_amount(alice()) + 1;
-      transfer(bob(), 10).map_err(|err| println!("{:?}", err)).ok();
+        // test transfers
+        let transfer_alice_balance_expected = balance_of(alice()) - 10 - get_metadata().fee;
+        let transfer_bob_balance_expected = balance_of(bob()) + 10;
+        let transfer_john_balance_expected = balance_of(john());
+        let transfer_transaction_amount_expected = get_transactions(0, 10).len() + 1;
+        let transfer_user_transaction_amount_expected = get_user_transaction_amount(alice()) + 1;
+        transfer(bob(), 10)
+            .map_err(|err| println!("{:?}", err))
+            .ok();
 
-      assert_eq!(balance_of(alice()), transfer_alice_balance_expected, "Transfer did not transfer the expected amount to Alice");
-      assert_eq!(balance_of(bob()), transfer_bob_balance_expected, "Transfer did not transfer the expected amount to Bob");
-      assert_eq!(balance_of(john()), transfer_john_balance_expected, "Transfer did not transfer the expected amount to John");
-      assert_eq!(get_transactions(0, 10).len(), transfer_transaction_amount_expected, "transfer operation did not produce a transaction");
-      assert_eq!(get_user_transaction_amount(alice()), transfer_user_transaction_amount_expected, "get_user_transaction_amount returned the wrong value after a transfer");
-      assert_eq!(get_user_transactions(alice(), 0, 10).len(), transfer_user_transaction_amount_expected, "get_user_transactions returned the wrong value after a transfer");
-      assert_eq!(get_holders(0, 10).len(), 3, "get_holders returned the correct amount of holders after transfer");
-      assert_eq!(get_transaction(1).op, Operation::Transfer, "get_transaction returnded a Transfer operation");
+        assert_eq!(
+            balance_of(alice()),
+            transfer_alice_balance_expected,
+            "Transfer did not transfer the expected amount to Alice"
+        );
+        assert_eq!(
+            balance_of(bob()),
+            transfer_bob_balance_expected,
+            "Transfer did not transfer the expected amount to Bob"
+        );
+        assert_eq!(
+            balance_of(john()),
+            transfer_john_balance_expected,
+            "Transfer did not transfer the expected amount to John"
+        );
+        assert_eq!(
+            get_transactions(0, 10).len(),
+            transfer_transaction_amount_expected,
+            "transfer operation did not produce a transaction"
+        );
+        assert_eq!(
+            get_user_transaction_amount(alice()),
+            transfer_user_transaction_amount_expected,
+            "get_user_transaction_amount returned the wrong value after a transfer"
+        );
+        assert_eq!(
+            get_user_transactions(alice(), 0, 10).len(),
+            transfer_user_transaction_amount_expected,
+            "get_user_transactions returned the wrong value after a transfer"
+        );
+        assert_eq!(
+            get_holders(0, 10).len(),
+            3,
+            "get_holders returned the correct amount of holders after transfer"
+        );
+        assert_eq!(
+            get_transaction(1).op,
+            Operation::Transfer,
+            "get_transaction returnded a Transfer operation"
+        );
 
-      // test allowances
-      approve(bob(), 100).map_err(|err| println!("{:?}", err)).ok();
-      assert_eq!(allowance(alice(), bob()), 100 + get_metadata().fee, "Approve did not give the correct allowance");
-      assert_eq!(get_allowance_size(), 1, "getAllowanceSize returns the correct value");
-      assert_eq!(get_user_approvals(alice()).len(), 1, "getUserApprovals not returning the correct value");
+        // test allowances
+        approve(bob(), 100)
+            .map_err(|err| println!("{:?}", err))
+            .ok();
+        assert_eq!(
+            allowance(alice(), bob()),
+            100 + get_metadata().fee,
+            "Approve did not give the correct allowance"
+        );
+        assert_eq!(
+            get_allowance_size(),
+            1,
+            "getAllowanceSize returns the correct value"
+        );
+        assert_eq!(
+            get_user_approvals(alice()).len(),
+            1,
+            "getUserApprovals not returning the correct value"
+        );
 
-      // test transfer_from
-      // inserting an allowance of Alice for Bob's balance to test transfer_from
-      let allowances = ic::get_mut::<Allowances>();
-      let mut inner = HashMap::new();
-      inner.insert(alice(), 5 + get_metadata().fee);
-      allowances.insert(bob(), inner);
+        // test transfer_from
+        // inserting an allowance of Alice for Bob's balance to test transfer_from
+        let allowances = ic::get_mut::<Allowances>();
+        let mut inner = HashMap::new();
+        inner.insert(alice(), 5 + get_metadata().fee);
+        allowances.insert(bob(), inner);
 
-      let transfer_from_alice_balance_expected = balance_of(alice());
-      let transfer_from_bob_balance_expected = balance_of(bob()) - 5 - get_metadata().fee;
-      let transfer_from_john_balance_expected = balance_of(john()) + 5;
-      let transfer_from_transaction_amount_expected = get_transactions(0, 10).len() + 1;
+        let transfer_from_alice_balance_expected = balance_of(alice());
+        let transfer_from_bob_balance_expected = balance_of(bob()) - 5 - get_metadata().fee;
+        let transfer_from_john_balance_expected = balance_of(john()) + 5;
+        let transfer_from_transaction_amount_expected = get_transactions(0, 10).len() + 1;
 
-      transfer_from(bob(), john(), 5).map_err(|err| println!("{:?}", err)).ok();
+        transfer_from(bob(), john(), 5)
+            .map_err(|err| println!("{:?}", err))
+            .ok();
 
-      assert_eq!(balance_of(alice()), transfer_from_alice_balance_expected, "transfer_from transferred the correct value for alice");
-      assert_eq!(balance_of(bob()), transfer_from_bob_balance_expected, "transfer_from transferred the correct value for bob");
-      assert_eq!(balance_of(john()), transfer_from_john_balance_expected, "transfer_from transferred the correct value for john");
-      assert_eq!(allowance(bob(), alice()), 0, "allowance has not been spent");
-      assert_eq!(get_transactions(0, 10).len(), transfer_from_transaction_amount_expected, "transfer_from operation did not produce a transaction");
+        assert_eq!(
+            balance_of(alice()),
+            transfer_from_alice_balance_expected,
+            "transfer_from transferred the correct value for alice"
+        );
+        assert_eq!(
+            balance_of(bob()),
+            transfer_from_bob_balance_expected,
+            "transfer_from transferred the correct value for bob"
+        );
+        assert_eq!(
+            balance_of(john()),
+            transfer_from_john_balance_expected,
+            "transfer_from transferred the correct value for john"
+        );
+        assert_eq!(allowance(bob(), alice()), 0, "allowance has not been spent");
+        assert_eq!(
+            get_transactions(0, 10).len(),
+            transfer_from_transaction_amount_expected,
+            "transfer_from operation did not produce a transaction"
+        );
 
-      // Transferring more than the balance
-      assert_eq!(transfer(alice(), 1_000_000), Err(TxError::InsufficientBalance) , "alice was able to transfer more than is allowed");
-      // Transferring more than the balance
-      assert_eq!(transfer_from(bob(), john(), 1_000_000), Err(TxError::InsufficientAllowance) , "alice was able to transfer more than is allowed");
+        // Transferring more than the balance
+        assert_eq!(
+            transfer(alice(), 1_000_000),
+            Err(TxError::InsufficientBalance),
+            "alice was able to transfer more than is allowed"
+        );
+        // Transferring more than the balance
+        assert_eq!(
+            transfer_from(bob(), john(), 1_000_000),
+            Err(TxError::InsufficientAllowance),
+            "alice was able to transfer more than is allowed"
+        );
 
-      //set owner test
-      set_owner(bob());
-      assert_eq!(bob(), owner(), "Failed to set new owner");
+        //set owner test
+        set_owner(bob());
+        assert_eq!(bob(), owner(), "Failed to set new owner");
     }
 
     #[test]
     fn permission_tests() {
-      MockContext::new()
-      .with_balance(100_000)
-      .with_caller(bob())
-      .inject();
+        MockContext::new()
+            .with_balance(100_000)
+            .with_caller(bob())
+            .inject();
 
-      initialize_tests();
+        initialize_tests();
 
-      assert_panic!(set_logo(String::from("forbidden")));
-      assert_panic!(set_fee(123));
-      assert_panic!(set_fee_to(john()));
-      assert_panic!(set_owner(bob()));
+        assert_panic!(set_logo(String::from("forbidden")));
+        assert_panic!(set_fee(123));
+        assert_panic!(set_fee_to(john()));
+        assert_panic!(set_owner(bob()));
     }
 }
