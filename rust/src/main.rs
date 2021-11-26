@@ -67,13 +67,6 @@ impl Default for Metadata {
 type Balances = HashMap<Principal, Nat>;
 type Allowances = HashMap<Principal, HashMap<Principal, Nat>>;
 
-#[derive(Deserialize, CandidType)]
-struct UpgradePayload {
-    metadata: Metadata,
-    balance: Vec<(Principal, Nat)>,
-    allow: Vec<(Principal, Vec<(Principal, Nat)>)>,
-}
-
 #[derive(CandidType, Debug, PartialEq)]
 pub enum TxError {
     InsufficientBalance,
