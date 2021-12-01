@@ -10,7 +10,7 @@ type Metadata = record {
   total_supply : nat;
   symbol : text;
 };
-type Result = variant { Ok : nat64; Err : TxError };
+type Result = variant { Ok : nat; Err : TxError };
 type TokenInfo = record {
   holder_number : nat64;
   metadata : Metadata;
