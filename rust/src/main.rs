@@ -75,7 +75,7 @@ pub enum TxError {
     Unauthorized,
     Other,
 }
-pub type TxReceipt = Result<usize, TxError>;
+pub type TxReceipt = Result<Nat, TxError>;
 
 #[init]
 #[candid_method(init)]
@@ -548,7 +548,7 @@ pub async fn insert_into_cap(ie: IndefiniteEvent) -> TxReceipt {
 async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
     let insert_res = insert(ie.clone())
         .await
-        .map(|tx_id| tx_id as usize)
+        .map(|tx_id| Nat::from(tx_id))
         .map_err(|_| TxError::Other);
 
     if insert_res.is_err() {
