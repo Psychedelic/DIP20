@@ -1,6 +1,10 @@
-## Introduction
+![Frame 645](https://user-images.githubusercontent.com/73345016/144495493-0a9e2cf8-1812-47dd-93fb-9dca9c840422.png)
 
-Token standard is essential for the Internet Computer ecosystem, especially for the decentralized finance(DeFi) system. We implemented an ERC-20 style token standard in both Motoko and Rust, the standard is named DIP20.
+## DIP20 - Introduction
+
+Token standards are essential for the Internet Computer ecosystem, especially for the decentralized finance ecosystem (DeFi) system. In this token interface, we implemented an ERC-20 style token standard in both Motoko and Rust, the standard is named DIP20.
+
+This standard allows for a common and familiar interface that not only provides a quick entry point for existing blockchain developers, but future interoperability options between the Internet Computer and Ethereum, through the process of sustaining the same shared interfaces.
 
 You can find the interface descriptions in the [specification file](./spec.md).
 
