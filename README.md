@@ -1,4 +1,4 @@
-![Frame 645](https://user-images.githubusercontent.com/73345016/144495493-0a9e2cf8-1812-47dd-93fb-9dca9c840422.png)
+![Group 5969](https://user-images.githubusercontent.com/73345016/144505730-ae943ac7-626d-43d2-961f-acedbdf73f49.png)
 
 ## DIP20 - Introduction
 
