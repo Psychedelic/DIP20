@@ -105,7 +105,7 @@ fn init(
     let balances = ic::get_mut::<Balances>();
     balances.insert(owner, total_supply.clone());
     let _ = add_record(
-        None,
+        owner,
         Operation::Mint,
         owner,
         owner,
@@ -152,7 +152,7 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
     metadata.history_size += 1;
 
     add_record(
-        None,
+        from,
         Operation::Transfer,
         from,
         to,
@@ -203,7 +203,7 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
     metadata.history_size += 1;
 
     add_record(
-        Some(owner),
+        owner,
         Operation::TransferFrom,
         from,
         to,
@@ -253,7 +253,7 @@ async fn approve(spender: Principal, value: Nat) -> TxReceipt {
     metadata.history_size += 1;
 
     add_record(
-        None,
+        owner,
         Operation::Approve,
         owner,
         spender,
@@ -280,7 +280,7 @@ async fn mint(to: Principal, amount: Nat) -> TxReceipt {
     metadata.history_size += 1;
 
     add_record(
-        None,
+        caller,
         Operation::Mint,
         caller,
         to,
@@ -307,7 +307,7 @@ async fn burn(amount: Nat) -> TxReceipt {
     metadata.history_size += 1;
 
     add_record(
-        None,
+        caller,
         Operation::Burn,
         caller,
         caller,
@@ -490,12 +490,23 @@ fn main() {
 
 #[pre_upgrade]
 fn pre_upgrade() {
-    ic::stable_store((ic::get::<Metadata>().clone(),ic::get::<Balances>(), ic::get::<Allowances>(), tx_log())).unwrap();
+    ic::stable_store((
+        ic::get::<Metadata>().clone(),
+        ic::get::<Balances>(),
+        ic::get::<Allowances>(),
+        tx_log(),
+    ))
+    .unwrap();
 }
 
 #[post_upgrade]
 fn post_upgrade() {
-    let (metadata_stored, balances_stored, allowances_stored, tx_log_stored): (Metadata,Balances,Allowances,TxLog) = ic::stable_restore().unwrap();
+    let (metadata_stored, balances_stored, allowances_stored, tx_log_stored): (
+        Metadata,
+        Balances,
+        Allowances,
+        TxLog,
+    ) = ic::stable_restore().unwrap();
     let metadata = ic::get_mut::<Metadata>();
     *metadata = metadata_stored;
 
@@ -510,7 +521,7 @@ fn post_upgrade() {
 }
 
 async fn add_record(
-    caller: Option<Principal>,
+    caller: Principal,
     op: Operation,
     from: Principal,
     to: Principal,
