@@ -1,4 +1,4 @@
-![Group 5969](https://user-images.githubusercontent.com/73345016/144505730-ae943ac7-626d-43d2-961f-acedbdf73f49.png)
+![Group 5981 (1)](https://user-images.githubusercontent.com/73345016/144523306-f6041b24-bd34-4ecf-bc0f-6c96b0c24ca8.png)
 
 ## DIP20 - Introduction
 
