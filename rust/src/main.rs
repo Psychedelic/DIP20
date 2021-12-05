@@ -534,7 +534,7 @@ async fn add_record(
         TypedEvent<DIP20Details>,
     >::into(
         TxRecord {
-            caller,
+            caller: Some(caller),
             index: Nat::from(0),
             from,
             to,
