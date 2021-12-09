@@ -324,6 +324,14 @@ async fn burn(amount: Nat) -> TxReceipt {
     .await
 }
 
+#[update(name = "setName")]
+#[candid_method(update, rename = "setName")]
+fn set_name(name: String) {
+    let metadata = ic::get_mut::<Metadata>();
+    assert_eq!(ic::caller(), metadata.owner);
+    metadata.name = name;
+}
+
 #[update(name = "setLogo")]
 #[candid_method(update, rename = "setLogo")]
 fn set_logo(logo: String) {
