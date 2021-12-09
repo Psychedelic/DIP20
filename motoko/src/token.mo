@@ -20,10 +20,10 @@ import ExperimentalCycles "mo:base/ExperimentalCycles";
 
 shared(msg) actor class Token(
     _logo: Text,
-    _name: Text, 
+    _name: Text,
     _symbol: Text,
-    _decimals: Nat8, 
-    _totalSupply: Nat, 
+    _decimals: Nat8,
+    _totalSupply: Nat,
     _owner: Principal,
     _fee: Nat
     ) {
@@ -130,10 +130,10 @@ shared(msg) actor class Token(
     };
 
     /*
-    *   Core interfaces: 
-    *       update calls: 
+    *   Core interfaces:
+    *       update calls:
     *           transfer/transferFrom/approve
-    *       query calls: 
+    *       query calls:
     *           logo/name/symbol/decimal/totalSupply/balanceOf/allowance/getMetadata
     *           historySize/getTransaction/getTransactions
     */
@@ -171,7 +171,7 @@ shared(msg) actor class Token(
         return #ok(txid);
     };
 
-    /// Allows spender to withdraw from your account multiple times, up to the value amount. 
+    /// Allows spender to withdraw from your account multiple times, up to the value amount.
     /// If this function is called again it overwrites the current allowance with value.
     public shared(msg) func approve(spender: Principal, value: Nat) : async TxReceipt {
         if(_balanceOf(msg.caller) < fee) { return #err(#InsufficientBalance); };
@@ -284,10 +284,15 @@ shared(msg) actor class Token(
 
     /*
     *   Optional interfaces:
-    *       setLogo/setFee/setFeeTo/setOwner
+    *       setName/setLogo/setFee/setFeeTo/setOwner
     *       getUserTransactionsAmount/getUserTransactions
     *       getTokenInfo/getHolders/getUserApprovals
     */
+    public shared(msg) func setName(name: Text) {
+        assert(msg.caller == owner_);
+        name_ := name;
+    };
+
     public shared(msg) func setLogo(logo: Text) {
         assert(msg.caller == owner_);
         logo_ := logo;
@@ -383,7 +388,7 @@ shared(msg) actor class Token(
         for ((k, v) in allowances.entries()) {
             size += v.size();
         };
-        return size;   
+        return size;
     };
 
     public query func getUserApprovals(who : Principal) : async [(Principal, Nat)] {

@@ -56,6 +56,7 @@ service : (
   setFee : (nat) -> ();
   setFeeTo : (principal) -> ();
   setLogo : (text) -> ();
+  setName : (text) -> ();
   setOwner : (principal) -> ();
   symbol : () -> (text) query;
   totalSupply : () -> (nat) query;

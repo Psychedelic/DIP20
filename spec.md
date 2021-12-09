@@ -225,6 +225,14 @@ public shared(msg) func burn(from: Principal, value: Nat): async TxReceipt
 
 `aaaaa-aa` is the IC management canister id, it's not a real canister, just an abstraction of system level management functions, it can be used as blackhole address.
 
+##### setName
+
+Change the name of the token, no return value needed.
+
+```js
+public shared(msg) func setName(name: Text)
+```
+
 ##### setLogo
 
 Change the logo of the token, no return value needed. The `logo` can either be a base64 encoded text of the logo picture or an URL pointing to the logo picture.
