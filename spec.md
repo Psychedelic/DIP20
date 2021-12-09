@@ -29,12 +29,25 @@ A standard token interface is a basic building block for many applications on th
 2. TxReceipt: receipt for update calls, contains the transaction index or an error message
 
    ```js
-   type TxReceipt = Result.Result<Nat, {
-       #InsufficientBalance;
-       #InsufficientAllowance;
-   }>;
-   
+
+   public type TxReceipt = {
+       #Ok: Nat;
+       #Err: {
+            #InsufficientAllowance;
+            #InsufficientBalance;
+            #ErrorOperationStyle;
+            #Unauthorized;
+            #LedgerTrap;
+            #ErrorTo;
+            #Other;
+            #BlockUsed;
+            #AmountTooSmall;
+       };
+   };
+
    when the Transaction status is #failed, an error should be returned instead of a transaction id
+
+   ```
 
 3. TxRecord: history transaction record
 
