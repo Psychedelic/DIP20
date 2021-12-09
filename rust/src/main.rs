@@ -429,8 +429,8 @@ fn owner() -> Principal {
     metadata.owner
 }
 
-#[query(name = "getMetadta")]
-#[candid_method(query, rename = "getMetadta")]
+#[query(name = "getMetadata")]
+#[candid_method(query, rename = "getMetadata")]
 fn get_metadata() -> Metadata {
     ic::get::<Metadata>().clone()
 }
