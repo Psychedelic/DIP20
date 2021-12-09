@@ -19,8 +19,13 @@ type TokenInfo = record {
 type TxError = variant {
   InsufficientAllowance;
   InsufficientBalance;
+  ErrorOperationStyle;
   Unauthorized;
+  LedgerTrap;
+  ErrorTo;
   Other;
+  BlockUsed;
+  AmountTooSmall;
 };
 service : (
   text,

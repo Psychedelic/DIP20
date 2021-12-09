@@ -73,6 +73,11 @@ pub enum TxError {
     InsufficientBalance,
     InsufficientAllowance,
     Unauthorized,
+    LedgerTrap,
+    AmountTooSmall,
+    BlockUsed,
+    ErrorOperationStyle,
+    ErrorTo,
     Other,
 }
 pub type TxReceipt = Result<Nat, TxError>;
