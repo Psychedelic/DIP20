@@ -1,20 +1,20 @@
 type Metadata = record {
   fee : nat;
-  deploy_time : nat64;
   decimals : nat8;
-  fee_to : principal;
   owner : principal;
-  history_size : nat64;
   logo : text;
   name : text;
-  total_supply : nat;
+  totalSupply : nat;
   symbol : text;
 };
 type Result = variant { Ok : nat; Err : TxError };
 type TokenInfo = record {
-  holder_number : nat64;
+  holderNumber : nat64;
+  deployTime : nat64;
   metadata : Metadata;
+  historySize : nat64;
   cycles : nat64;
+  feeTo : principal;
 };
 type TxError = variant {
   InsufficientAllowance;

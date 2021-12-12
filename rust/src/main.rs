@@ -26,8 +26,20 @@ pub fn tx_log<'a>() -> &'a mut TxLog {
     ic_kit::ic::get_mut::<TxLog>()
 }
 
+#[allow(non_snake_case)]
 #[derive(Deserialize, CandidType, Clone, Debug)]
 struct Metadata {
+    logo: String,
+    name: String,
+    symbol: String,
+    decimals: u8,
+    totalSupply: Nat,
+    owner: Principal,
+    fee: Nat,
+}
+
+#[derive(Deserialize, CandidType, Clone, Debug)]
+struct StatsData {
     logo: String,
     name: String,
     symbol: String,
@@ -40,17 +52,21 @@ struct Metadata {
     deploy_time: u64,
 }
 
+#[allow(non_snake_case)]
 #[derive(Deserialize, CandidType, Clone, Debug)]
 struct TokenInfo {
     metadata: Metadata,
+    feeTo: Principal,
     // status info
-    holder_number: usize,
+    historySize: usize,
+    deployTime: u64,
+    holderNumber: usize,
     cycles: u64,
 }
 
-impl Default for Metadata {
+impl Default for StatsData {
     fn default() -> Self {
-        Metadata {
+        StatsData {
             logo: "".to_string(),
             name: "".to_string(),
             symbol: "".to_string(),
@@ -95,17 +111,17 @@ fn init(
     fee_to: Principal,
     cap: Principal,
 ) {
-    let metadata = ic::get_mut::<Metadata>();
-    metadata.logo = logo;
-    metadata.name = name;
-    metadata.symbol = symbol;
-    metadata.decimals = decimals;
-    metadata.total_supply = total_supply.clone();
-    metadata.owner = owner;
-    metadata.fee = fee;
-    metadata.fee_to = fee_to;
-    metadata.history_size = 1;
-    metadata.deploy_time = ic::time();
+    let stats = ic::get_mut::<StatsData>();
+    stats.logo = logo;
+    stats.name = name;
+    stats.symbol = symbol;
+    stats.decimals = decimals;
+    stats.total_supply = total_supply.clone();
+    stats.owner = owner;
+    stats.fee = fee;
+    stats.fee_to = fee_to;
+    stats.history_size = 1;
+    stats.deploy_time = ic::time();
     handshake(1_000_000, Some(cap));
     let balances = ic::get_mut::<Balances>();
     balances.insert(owner, total_supply.clone());
@@ -138,8 +154,8 @@ fn _transfer(from: Principal, to: Principal, value: Nat) {
 }
 
 fn _charge_fee(user: Principal, fee_to: Principal, fee: Nat) {
-    let metadata = ic::get::<Metadata>();
-    if metadata.fee > Nat::from(0) {
+    let stats = ic::get::<StatsData>();
+    if stats.fee > Nat::from(0) {
         _transfer(user, fee_to, fee);
     }
 }
@@ -148,13 +164,13 @@ fn _charge_fee(user: Principal, fee_to: Principal, fee: Nat) {
 #[candid_method(update)]
 async fn transfer(to: Principal, value: Nat) -> TxReceipt {
     let from = ic::caller();
-    let metadata = ic::get_mut::<Metadata>();
-    if balance_of(from) < value.clone() + metadata.fee.clone() {
+    let stats = ic::get_mut::<StatsData>();
+    if balance_of(from) < value.clone() + stats.fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
-    _charge_fee(from, metadata.fee_to, metadata.fee.clone());
+    _charge_fee(from, stats.fee_to, stats.fee.clone());
     _transfer(from, to, value.clone());
-    metadata.history_size += 1;
+    stats.history_size += 1;
 
     add_record(
         from,
@@ -162,7 +178,7 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
         from,
         to,
         value,
-        metadata.fee.clone(),
+        stats.fee.clone(),
         ic::time(),
         TransactionStatus::Succeeded,
     )
@@ -174,23 +190,23 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
 async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt {
     let owner = ic::caller();
     let from_allowance = allowance(from, owner);
-    let metadata = ic::get_mut::<Metadata>();
-    if from_allowance < value.clone() + metadata.fee.clone() {
+    let stats = ic::get_mut::<StatsData>();
+    if from_allowance < value.clone() + stats.fee.clone() {
         return Err(TxError::InsufficientAllowance);
     }
     let from_balance = balance_of(from);
-    if from_balance < value.clone() + metadata.fee.clone() {
+    if from_balance < value.clone() + stats.fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
-    _charge_fee(from, metadata.fee_to, metadata.fee.clone());
+    _charge_fee(from, stats.fee_to, stats.fee.clone());
     _transfer(from, to, value.clone());
     let allowances = ic::get_mut::<Allowances>();
     match allowances.get(&from) {
         Some(inner) => {
             let result = inner.get(&owner).unwrap().clone();
             let mut temp = inner.clone();
-            if result.clone() - value.clone() - metadata.fee.clone() != 0 {
-                temp.insert(owner, result.clone() - value.clone() - metadata.fee.clone());
+            if result.clone() - value.clone() - stats.fee.clone() != 0 {
+                temp.insert(owner, result.clone() - value.clone() - stats.fee.clone());
                 allowances.insert(from, temp);
             } else {
                 temp.remove(&owner);
@@ -205,7 +221,7 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
             assert!(false);
         }
     }
-    metadata.history_size += 1;
+    stats.history_size += 1;
 
     add_record(
         owner,
@@ -213,7 +229,7 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
         from,
         to,
         value,
-        metadata.fee.clone(),
+        stats.fee.clone(),
         ic::time(),
         TransactionStatus::Succeeded,
     )
@@ -224,12 +240,12 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
 #[candid_method(update)]
 async fn approve(spender: Principal, value: Nat) -> TxReceipt {
     let owner = ic::caller();
-    let metadata = ic::get_mut::<Metadata>();
-    if balance_of(owner) < metadata.fee.clone() {
+    let stats = ic::get_mut::<StatsData>();
+    if balance_of(owner) < stats.fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
-    _charge_fee(owner, metadata.fee_to, metadata.fee.clone());
-    let v = value.clone() + metadata.fee.clone();
+    _charge_fee(owner, stats.fee_to, stats.fee.clone());
+    let v = value.clone() + stats.fee.clone();
     let allowances = ic::get_mut::<Allowances>();
     match allowances.get(&owner) {
         Some(inner) => {
@@ -255,7 +271,7 @@ async fn approve(spender: Principal, value: Nat) -> TxReceipt {
             }
         }
     }
-    metadata.history_size += 1;
+    stats.history_size += 1;
 
     add_record(
         owner,
@@ -263,7 +279,7 @@ async fn approve(spender: Principal, value: Nat) -> TxReceipt {
         owner,
         spender,
         v,
-        metadata.fee.clone(),
+        stats.fee.clone(),
         ic::time(),
         TransactionStatus::Succeeded,
     )
@@ -274,15 +290,15 @@ async fn approve(spender: Principal, value: Nat) -> TxReceipt {
 #[candid_method(update, rename = "mint")]
 async fn mint(to: Principal, amount: Nat) -> TxReceipt {
     let caller = ic::caller();
-    let metadata = ic::get_mut::<Metadata>();
-    if caller != metadata.owner {
+    let stats = ic::get_mut::<StatsData>();
+    if caller != stats.owner {
         return Err(TxError::Unauthorized);
     }
     let to_balance = balance_of(to);
     let balances = ic::get_mut::<Balances>();
     balances.insert(to, to_balance + amount.clone());
-    metadata.total_supply += amount.clone();
-    metadata.history_size += 1;
+    stats.total_supply += amount.clone();
+    stats.history_size += 1;
 
     add_record(
         caller,
@@ -301,15 +317,15 @@ async fn mint(to: Principal, amount: Nat) -> TxReceipt {
 #[candid_method(update, rename = "burn")]
 async fn burn(amount: Nat) -> TxReceipt {
     let caller = ic::caller();
-    let metadata = ic::get_mut::<Metadata>();
+    let stats = ic::get_mut::<StatsData>();
     let caller_balance = balance_of(caller);
     if caller_balance.clone() < amount.clone() {
         return Err(TxError::InsufficientBalance);
     }
     let balances = ic::get_mut::<Balances>();
     balances.insert(caller, caller_balance - amount.clone());
-    metadata.total_supply -= amount.clone();
-    metadata.history_size += 1;
+    stats.total_supply -= amount.clone();
+    stats.history_size += 1;
 
     add_record(
         caller,
@@ -327,41 +343,41 @@ async fn burn(amount: Nat) -> TxReceipt {
 #[update(name = "setName")]
 #[candid_method(update, rename = "setName")]
 fn set_name(name: String) {
-    let metadata = ic::get_mut::<Metadata>();
-    assert_eq!(ic::caller(), metadata.owner);
-    metadata.name = name;
+    let stats = ic::get_mut::<StatsData>();
+    assert_eq!(ic::caller(), stats.owner);
+    stats.name = name;
 }
 
 #[update(name = "setLogo")]
 #[candid_method(update, rename = "setLogo")]
 fn set_logo(logo: String) {
-    let metadata = ic::get_mut::<Metadata>();
-    assert_eq!(ic::caller(), metadata.owner);
-    metadata.logo = logo;
+    let stats = ic::get_mut::<StatsData>();
+    assert_eq!(ic::caller(), stats.owner);
+    stats.logo = logo;
 }
 
 #[update(name = "setFee")]
 #[candid_method(update, rename = "setFee")]
 fn set_fee(fee: Nat) {
-    let metadata = ic::get_mut::<Metadata>();
-    assert_eq!(ic::caller(), metadata.owner);
-    metadata.fee = fee;
+    let stats = ic::get_mut::<StatsData>();
+    assert_eq!(ic::caller(), stats.owner);
+    stats.fee = fee;
 }
 
 #[update(name = "setFeeTo")]
 #[candid_method(update, rename = "setFeeTo")]
 fn set_fee_to(fee_to: Principal) {
-    let metadata = ic::get_mut::<Metadata>();
-    assert_eq!(ic::caller(), metadata.owner);
-    metadata.fee_to = fee_to;
+    let stats = ic::get_mut::<StatsData>();
+    assert_eq!(ic::caller(), stats.owner);
+    stats.fee_to = fee_to;
 }
 
 #[update(name = "setOwner")]
 #[candid_method(update, rename = "setOwner")]
 fn set_owner(owner: Principal) {
-    let metadata = ic::get_mut::<Metadata>();
-    assert_eq!(ic::caller(), metadata.owner);
-    metadata.owner = owner;
+    let stats = ic::get_mut::<StatsData>();
+    assert_eq!(ic::caller(), stats.owner);
+    stats.owner = owner;
 }
 
 #[query(name = "balanceOf")]
@@ -390,67 +406,79 @@ fn allowance(owner: Principal, spender: Principal) -> Nat {
 #[query(name = "getLogo")]
 #[candid_method(query, rename = "getLogo")]
 fn get_logo() -> String {
-    let metadata = ic::get::<Metadata>();
-    metadata.logo.clone()
+    let stats = ic::get::<StatsData>();
+    stats.logo.clone()
 }
 
 #[query(name = "name")]
 #[candid_method(query)]
 fn name() -> String {
-    let metadata = ic::get::<Metadata>();
-    metadata.name.clone()
+    let stats = ic::get::<StatsData>();
+    stats.name.clone()
 }
 
 #[query(name = "symbol")]
 #[candid_method(query)]
 fn symbol() -> String {
-    let metadata = ic::get::<Metadata>();
-    metadata.symbol.clone()
+    let stats = ic::get::<StatsData>();
+    stats.symbol.clone()
 }
 
 #[query(name = "decimals")]
 #[candid_method(query)]
 fn decimals() -> u8 {
-    let metadata = ic::get::<Metadata>();
-    metadata.decimals
+    let stats = ic::get::<StatsData>();
+    stats.decimals
 }
 
 #[query(name = "totalSupply")]
 #[candid_method(query, rename = "totalSupply")]
 fn total_supply() -> Nat {
-    let metadata = ic::get::<Metadata>();
-    metadata.total_supply.clone()
+    let stats = ic::get::<StatsData>();
+    stats.total_supply.clone()
 }
 
 #[query(name = "owner")]
 #[candid_method(query)]
 fn owner() -> Principal {
-    let metadata = ic::get::<Metadata>();
-    metadata.owner
+    let stats = ic::get::<StatsData>();
+    stats.owner
 }
 
 #[query(name = "getMetadata")]
 #[candid_method(query, rename = "getMetadata")]
 fn get_metadata() -> Metadata {
-    ic::get::<Metadata>().clone()
+    let s = ic::get::<StatsData>().clone();
+    Metadata {
+        logo: s.logo,
+        name: s.name,
+        symbol: s.symbol,
+        decimals: s.decimals,
+        totalSupply: s.total_supply,
+        owner: s.owner,
+        fee: s.fee,
+    }
 }
 
 #[query(name = "historySize")]
 #[candid_method(query, rename = "historySize")]
 fn history_size() -> usize {
-    let metadata = ic::get::<Metadata>();
-    metadata.history_size
+    let stats = ic::get::<StatsData>();
+    stats.history_size
 }
 
 #[query(name = "getTokenInfo")]
 #[candid_method(query, rename = "getTokenInfo")]
 fn get_token_info() -> TokenInfo {
-    let metadata = ic::get::<Metadata>().clone();
+    let stats = ic::get::<StatsData>().clone();
     let balance = ic::get::<Balances>();
 
     return TokenInfo {
-        metadata: metadata.clone(),
-        holder_number: balance.len(),
+        metadata: get_metadata(),
+        feeTo: stats.fee_to,
+        historySize: stats.history_size,
+        deployTime: stats.deploy_time,
+        holderNumber: balance.len(),
         cycles: ic::balance(),
     };
 }
@@ -504,7 +532,7 @@ fn main() {
 #[pre_upgrade]
 fn pre_upgrade() {
     ic::stable_store((
-        ic::get::<Metadata>().clone(),
+        ic::get::<StatsData>().clone(),
         ic::get::<Balances>(),
         ic::get::<Allowances>(),
         tx_log(),
@@ -515,13 +543,13 @@ fn pre_upgrade() {
 #[post_upgrade]
 fn post_upgrade() {
     let (metadata_stored, balances_stored, allowances_stored, tx_log_stored): (
-        Metadata,
+        StatsData,
         Balances,
         Allowances,
         TxLog,
     ) = ic::stable_restore().unwrap();
-    let metadata = ic::get_mut::<Metadata>();
-    *metadata = metadata_stored;
+    let stats = ic::get_mut::<StatsData>();
+    *stats = metadata_stored;
 
     let balances = ic::get_mut::<Balances>();
     *balances = balances_stored;
