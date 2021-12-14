@@ -12,8 +12,8 @@ serde = "1.0"
 ic-kit = "0.4.3"
 ic-cdk = "0.3.1"
 assert-panic = "1.0.1"
-cap-std = { git = "https://github.com/flyq/cap", branch = "sdk-fix", package="cap-standards", features = ["alpha-dip20", "cap-sdk", "sdk-impls"] }
-cap-sdk = { git = "https://github.com/flyq/cap.git", branch = "sdk-fix" }
+cap-std = { git = "https://github.com/Psychedelic/cap", branch = "main", package="cap-standards", features = ["alpha-dip20", "cap-sdk", "sdk-impls"] }
+cap-sdk = { git = "https://github.com/Psychedelic/cap.git", branch = "main" }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 async-std = { version="1.10.0", features = ["attributes"] }
