@@ -122,7 +122,7 @@ fn init(
     stats.fee_to = fee_to;
     stats.history_size = 1;
     stats.deploy_time = ic::time();
-    handshake(1_000_000, Some(cap));
+    handshake(1_000_000_000_000, Some(cap));
     let balances = ic::get_mut::<Balances>();
     balances.insert(owner, total_supply.clone());
     let _ = add_record(
