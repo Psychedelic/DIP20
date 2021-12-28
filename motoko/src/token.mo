@@ -40,11 +40,20 @@ shared(msg) actor class Token(
         fee : Nat;
     };
     // returns tx index or error msg
-    type TxReceipt = Result.Result<Nat, {
-        #InsufficientBalance;
-        #InsufficientAllowance;
-        #Unauthorized;
-    }>;
+    public type TxReceipt = {
+        #Ok: Nat;
+        #Err: {
+            #InsufficientAllowance;
+            #InsufficientBalance;
+            #ErrorOperationStyle;
+            #Unauthorized;
+            #LedgerTrap;
+            #ErrorTo;
+            #Other;
+            #BlockUsed;
+            #AmountTooSmall;
+        };
+    };
 
     private stable var owner_ : Principal = _owner;
     private stable var logo_ : Text = _logo;
@@ -140,18 +149,18 @@ shared(msg) actor class Token(
 
     /// Transfers value amount of tokens to Principal to.
     public shared(msg) func transfer(to: Principal, value: Nat) : async TxReceipt {
-        if (_balanceOf(msg.caller) < value + fee) { return #err(#InsufficientBalance); };
+        if (_balanceOf(msg.caller) < value + fee) { return #Err(#InsufficientBalance); };
         _chargeFee(msg.caller, fee);
         _transfer(msg.caller, to, value);
         let txid = addRecord(null, #transfer, msg.caller, to, value, fee, Time.now(), #succeeded);
-        return #ok(txid);
+        return #Ok(txid);
     };
 
     /// Transfers value amount of tokens from Principal from to Principal to.
     public shared(msg) func transferFrom(from: Principal, to: Principal, value: Nat) : async TxReceipt {
-        if (_balanceOf(from) < value + fee) { return #err(#InsufficientBalance); };
+        if (_balanceOf(from) < value + fee) { return #Err(#InsufficientBalance); };
         let allowed : Nat = _allowance(from, msg.caller);
-        if (allowed < value + fee) { return #err(#InsufficientAllowance); };
+        if (allowed < value + fee) { return #Err(#InsufficientAllowance); };
         _chargeFee(from, fee);
         _transfer(from, to, value);
         let allowed_new : Nat = allowed - value - fee;
@@ -168,13 +177,13 @@ shared(msg) actor class Token(
             };
         };
         let txid = addRecord(?msg.caller, #transferFrom, from, to, value, fee, Time.now(), #succeeded);
-        return #ok(txid);
+        return #Ok(txid);
     };
 
     /// Allows spender to withdraw from your account multiple times, up to the value amount.
     /// If this function is called again it overwrites the current allowance with value.
     public shared(msg) func approve(spender: Principal, value: Nat) : async TxReceipt {
-        if(_balanceOf(msg.caller) < fee) { return #err(#InsufficientBalance); };
+        if(_balanceOf(msg.caller) < fee) { return #Err(#InsufficientBalance); };
         _chargeFee(msg.caller, fee);
         let v = value + fee;
         if (value == 0 and Option.isSome(allowances.get(msg.caller))) {
@@ -192,29 +201,29 @@ shared(msg) actor class Token(
             allowances.put(msg.caller, allowance_caller);
         };
         let txid = addRecord(null, #approve, msg.caller, spender, v, fee, Time.now(), #succeeded);
-        return #ok(txid);
+        return #Ok(txid);
     };
 
     public shared(msg) func mint(to: Principal, amount: Nat): async TxReceipt {
         if(msg.caller != owner_) {
-            return #err(#Unauthorized);
+            return #Err(#Unauthorized);
         };
         let to_balance = _balanceOf(to);
         totalSupply_ += amount;
         balances.put(to, to_balance + amount);
         let txid = addRecord(?msg.caller, #mint, blackhole, to, amount, 0, Time.now(), #succeeded);
-        return #ok(txid);
+        return #Ok(txid);
     };
 
     public shared(msg) func burn(amount: Nat): async TxReceipt {
         let from_balance = _balanceOf(msg.caller);
         if(from_balance < amount) {
-            return #err(#InsufficientBalance);
+            return #Err(#InsufficientBalance);
         };
         totalSupply_ -= amount;
         balances.put(msg.caller, from_balance - amount);
         let txid = addRecord(?msg.caller, #burn, msg.caller, blackhole, amount, 0, Time.now(), #succeeded);
-        return #ok(txid);
+        return #Ok(txid);
     };
 
     public query func logo() : async Text {
