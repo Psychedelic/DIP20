@@ -403,8 +403,8 @@ fn allowance(owner: Principal, spender: Principal) -> Nat {
     }
 }
 
-#[query(name = "getLogo")]
-#[candid_method(query, rename = "getLogo")]
+#[query(name = "logo")]
+#[candid_method(query, rename = "logo")]
 fn get_logo() -> String {
     let stats = ic::get::<StatsData>();
     stats.logo.clone()

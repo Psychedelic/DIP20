@@ -45,11 +45,11 @@ service : (
   decimals : () -> (nat8) query;
   getAllowanceSize : () -> (nat64) query;
   getHolders : (nat64, nat64) -> (vec record { principal; nat }) query;
-  getLogo : () -> (text) query;
   getMetadata : () -> (Metadata) query;
   getTokenInfo : () -> (TokenInfo) query;
   getUserApprovals : (principal) -> (vec record { principal; nat }) query;
   historySize : () -> (nat64) query;
+  logo : () -> (text) query;
   mint : (principal, nat) -> (Result);
   name : () -> (text) query;
   owner : () -> (principal) query;
