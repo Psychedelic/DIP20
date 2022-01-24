@@ -28,9 +28,8 @@ shared(msg) actor class Token(
     _decimals: Nat8,
     _totalSupply: Nat,
     _owner: Principal,
-    _fee: Nat,
-    _canister_id: Principal
-    ) {
+    _fee: Nat
+    ) = this {
     type Operation = Types.Operation;
     type TransactionStatus = Types.TransactionStatus;
     type TxRecord = Types.TxRecord;
@@ -86,19 +85,24 @@ shared(msg) actor class Token(
     };
     
     private stable var txcounter: Nat = 0;
-    private var cap: Cap.Cap = Cap.Cap(_canister_id, 2_000_000_000_000);
+    private var cap: ?Cap.Cap = null;
     private func addRecord(
         caller: Principal,
         op: Text, 
         details: [(Text, Root.DetailValue)]
         ): async () {
+        let c = switch(cap) {
+            case(?c) { c };
+            case(_) { Cap.Cap(Principal.fromActor(this), 2_000_000_000_000) };
+        };
+        cap := ?c;
         let record: Root.IndefiniteEvent = {
             operation = op;
             details = details;
             caller = caller;
         };
         // don't wait for result, faster
-        ignore cap.insert(record);
+        ignore c.insert(record);
     };
 
     private func _chargeFee(from: Principal, fee: Nat) {
