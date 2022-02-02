@@ -110,21 +110,6 @@ Allows `spender` to withdraw tokens from your account, up to the `value` amount.
 public shared(msg) func approve(spender: Principal, value: Nat) : async TxReceipt
 ```
 
-##### getTransaction
-
-Returns transaction detail of the transaction identified by `index`. If the `index` is out of range, the execution traps. Transactions are indexed from zero.
-
-```js
-public query func getTransaction(index: Nat) : async TxRecord
-```
-
-##### getTransactions
-
-Returns an array of transaction records in the range `[start, start + limit)`. To fend off DoS attacks, this function is allowed to trap, if limit is greater than the limit allowed by the token. This function is also allowed to trap if `start + limit > historySize()`
-
-```js
-public query func getTransactions(start: Nat, limit: Nat) : async [TxRecord]
-```
 
 #### Query calls
 
@@ -192,13 +177,6 @@ Returns the metadata of the token.
 public query func getMetadata() : async Metadata
 ```
 
-##### historySize
-
-Returns the history size.
-
-```js
-public query func historySize() : async Nat
-```
 
 
 ### 3. Optional interfaces
@@ -266,6 +244,30 @@ public shared(msg) func setOwner(newOwner: Principal)
 ```
 
 #### Query calls
+
+##### historySize
+
+Returns the history size.
+
+```js
+public query func historySize() : async Nat
+```
+
+##### getTransaction
+
+Returns transaction detail of the transaction identified by `index`. If the `index` is out of range, the execution traps. Transactions are indexed from zero.
+
+```js
+public query func getTransaction(index: Nat) : async TxRecord
+```
+
+##### getTransactions
+
+Returns an array of transaction records in the range `[start, start + limit)`. To fend off DoS attacks, this function is allowed to trap, if limit is greater than the limit allowed by the token. This function is also allowed to trap if `start + limit > historySize()`
+
+```js
+public query func getTransactions(start: Nat, limit: Nat) : async [TxRecord]
+```
 
 ##### getUserTransactions
 
