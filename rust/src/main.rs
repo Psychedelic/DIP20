@@ -697,12 +697,12 @@ async fn add_record(
 }
 
 pub async fn insert_into_cap(ie: IndefiniteEvent) -> TxReceipt {
-    TXLOG.with(|t| {
-        let mut tx_log = t.borrow_mut();
-        if let Some(failed_ie) = tx_log.ie_records.pop_front() {
-            // let _ = insert_into_cap_priv(failed_ie).await; // todo
-        }
+    let mut tx_log = TXLOG.with(|t| {
+       t.take()
     });
+    if let Some(failed_ie) = tx_log.ie_records.pop_front() {
+        let _ = insert_into_cap_priv(failed_ie).await;
+    }
     insert_into_cap_priv(ie).await
 }
 
