@@ -18,13 +18,9 @@ use std::convert::Into;
 use std::iter::FromIterator;
 use std::string::String;
 
-#[derive(CandidType, Default, Deserialize)]
+#[derive(CandidType, Default, Deserialize, Clone)]
 pub struct TxLog {
     pub ie_records: VecDeque<IndefiniteEvent>,
-}
-
-pub fn tx_log<'a>() -> &'a mut TxLog {
-    ic_kit::ic::get_mut::<TxLog>()
 }
 
 #[allow(non_snake_case)]
@@ -104,6 +100,7 @@ thread_local! {
     static BALANCES: RefCell<HashMap<Principal, Nat>> = RefCell::new(HashMap::default());
     static ALLOWS: RefCell<HashMap<Principal, HashMap<Principal, Nat>>> = RefCell::new(HashMap::default());
     static STATS: RefCell<StatsData> = RefCell::new(StatsData::default());
+    static TXLOG: RefCell<TxLog> = RefCell::new(TxLog::default());
 }
 
 #[init]
@@ -624,11 +621,23 @@ fn main() {
 
 #[pre_upgrade]
 fn pre_upgrade() {
+    let stats = STATS.with(|s| {
+        s.borrow().clone()
+    });
+    let balances = BALANCES.with(|b| {
+        b.borrow().clone()
+    });
+    let allows = ALLOWS.with(|a| {
+        a.borrow().clone()
+    });
+    let tx_log = TXLOG.with(|t| {
+        t.borrow().clone()
+    });
     ic::stable_store((
-        ic::get::<StatsData>().clone(),
-        ic::get::<Balances>(),
-        ic::get::<Allowances>(),
-        tx_log(),
+        stats,
+        balances,
+        allows,
+        tx_log,
     ))
     .unwrap();
 }
@@ -641,17 +650,22 @@ fn post_upgrade() {
         Allowances,
         TxLog,
     ) = ic::stable_restore().unwrap();
-    let stats = ic::get_mut::<StatsData>();
-    *stats = metadata_stored;
-
-    let balances = ic::get_mut::<Balances>();
-    *balances = balances_stored;
-
-    let allowances = ic::get_mut::<Allowances>();
-    *allowances = allowances_stored;
-
-    let tx_log = tx_log();
-    *tx_log = tx_log_stored;
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        *stats = metadata_stored;
+    });
+    BALANCES.with(|b| {
+        let mut balances = b.borrow_mut();
+        *balances = balances_stored;
+    });
+    ALLOWS.with(|a| {
+        let mut allowances = a.borrow_mut();
+        *allowances = allowances_stored;
+    });
+    TXLOG.with(|t| {
+        let mut tx_log = t.borrow_mut();
+        *tx_log = tx_log_stored;
+    });
 }
 
 async fn add_record(
@@ -683,10 +697,12 @@ async fn add_record(
 }
 
 pub async fn insert_into_cap(ie: IndefiniteEvent) -> TxReceipt {
-    let tx_log = tx_log();
-    if let Some(failed_ie) = tx_log.ie_records.pop_front() {
-        let _ = insert_into_cap_priv(failed_ie).await;
-    }
+    TXLOG.with(|t| {
+        let mut tx_log = t.borrow_mut();
+        if let Some(failed_ie) = tx_log.ie_records.pop_front() {
+            // let _ = insert_into_cap_priv(failed_ie).await; // todo
+        }
+    });
     insert_into_cap_priv(ie).await
 }
 
@@ -697,7 +713,10 @@ async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
         .map_err(|_| TxError::Other);
 
     if insert_res.is_err() {
-        tx_log().ie_records.push_back(ie.clone());
+        TXLOG.with(|t| {
+            let mut tx_log = t.borrow_mut();
+            tx_log.ie_records.push_back(ie.clone());
+        });
     }
 
     insert_res
