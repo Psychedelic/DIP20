@@ -366,7 +366,7 @@ async fn burn(amount: Nat) -> TxReceipt {
     });
     STATS.with(|s| {
         let mut stats = s.borrow_mut();
-        stats.total_supply += amount.clone();
+        stats.total_supply -= amount.clone();
     });
     _history_inc();
     add_record(
