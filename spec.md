@@ -39,7 +39,7 @@ A standard token interface is a basic building block for many applications on th
             #Unauthorized;
             #LedgerTrap;
             #ErrorTo;
-            #Other;
+            #Other: Text;
             #BlockUsed;
             #AmountTooSmall;
        };
