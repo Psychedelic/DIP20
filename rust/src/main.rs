@@ -95,7 +95,6 @@ pub enum TxError {
 }
 pub type TxReceipt = Result<Nat, TxError>;
 
-
 thread_local! {
     static BALANCES: RefCell<HashMap<Principal, Nat>> = RefCell::new(HashMap::default());
     static ALLOWS: RefCell<HashMap<Principal, HashMap<Principal, Nat>>> = RefCell::new(HashMap::default());
@@ -200,7 +199,7 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
     let fee = _get_fee();
     if balance_of(from) < value.clone() + fee.clone() {
         return Err(TxError::InsufficientBalance);
-    } 
+    }
     _charge_fee(from, fee.clone());
     _transfer(from, to, value.clone());
     _history_inc();
@@ -531,7 +530,7 @@ fn get_metadata() -> Metadata {
             totalSupply: s.total_supply.clone(),
             owner: s.owner,
             fee: s.fee.clone(),
-        }    
+        }
     })
 }
 
@@ -621,25 +620,11 @@ fn main() {
 
 #[pre_upgrade]
 fn pre_upgrade() {
-    let stats = STATS.with(|s| {
-        s.borrow().clone()
-    });
-    let balances = BALANCES.with(|b| {
-        b.borrow().clone()
-    });
-    let allows = ALLOWS.with(|a| {
-        a.borrow().clone()
-    });
-    let tx_log = TXLOG.with(|t| {
-        t.borrow().clone()
-    });
-    ic::stable_store((
-        stats,
-        balances,
-        allows,
-        tx_log,
-    ))
-    .unwrap();
+    let stats = STATS.with(|s| s.borrow().clone());
+    let balances = BALANCES.with(|b| b.borrow().clone());
+    let allows = ALLOWS.with(|a| a.borrow().clone());
+    let tx_log = TXLOG.with(|t| t.borrow().clone());
+    ic::stable_store((stats, balances, allows, tx_log)).unwrap();
 }
 
 #[post_upgrade]
@@ -697,9 +682,7 @@ async fn add_record(
 }
 
 pub async fn insert_into_cap(ie: IndefiniteEvent) -> TxReceipt {
-    let mut tx_log = TXLOG.with(|t| {
-       t.take()
-    });
+    let mut tx_log = TXLOG.with(|t| t.take());
     if let Some(failed_ie) = tx_log.ie_records.pop_front() {
         let _ = insert_into_cap_priv(failed_ie).await;
     }
@@ -710,10 +693,9 @@ async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
     let insert_res = insert(ie.clone())
         .await
         .map(|tx_id| Nat::from(tx_id))
-        .map_err(|error| TxError::Other(format!(
-            "Inserting into cap failed with error: {:?}",
-            error
-        )));
+        .map_err(|error| {
+            TxError::Other(format!("Inserting into cap failed with error: {:?}", error))
+        });
 
     if insert_res.is_err() {
         TXLOG.with(|t| {
