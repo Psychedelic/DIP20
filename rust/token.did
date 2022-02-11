@@ -23,9 +23,9 @@ type TxError = variant {
   Unauthorized;
   LedgerTrap;
   ErrorTo;
-  Other;
   BlockUsed;
   AmountTooSmall;
+  Other : text;
 };
 service : (
   text,
