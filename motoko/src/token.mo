@@ -17,6 +17,7 @@ import Order "mo:base/Order";
 import Nat "mo:base/Nat";
 import Nat64 "mo:base/Nat64";
 import Result "mo:base/Result";
+import Text "mo:base/Text";
 import ExperimentalCycles "mo:base/ExperimentalCycles";
 import Cap "./cap/Cap";
 import Root "./cap/Root";
@@ -52,7 +53,7 @@ shared(msg) actor class Token(
             #Unauthorized;
             #LedgerTrap;
             #ErrorTo;
-            #Other;
+            #Other: Text;
             #BlockUsed;
             #AmountTooSmall;
         };
