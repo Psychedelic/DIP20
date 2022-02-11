@@ -91,7 +91,7 @@ pub enum TxError {
     BlockUsed,
     ErrorOperationStyle,
     ErrorTo,
-    Other,
+    Other(String),
 }
 pub type TxReceipt = Result<Nat, TxError>;
 
@@ -710,7 +710,10 @@ async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
     let insert_res = insert(ie.clone())
         .await
         .map(|tx_id| Nat::from(tx_id))
-        .map_err(|_| TxError::Other);
+        .map_err(|error| TxError::Other(format!(
+            "Inserting into cap failed with error: {:?}",
+            error
+        )));
 
     if insert_res.is_err() {
         TXLOG.with(|t| {
