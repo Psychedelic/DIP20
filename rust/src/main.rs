@@ -9,6 +9,7 @@ use candid::{candid_method, CandidType, Deserialize, Int, Nat};
 use cap_sdk::{handshake, insert, Event, IndefiniteEvent, TypedEvent};
 use cap_std::dip20::cap::DIP20Details;
 use cap_std::dip20::{Operation, TransactionStatus, TxRecord};
+use dfn_core::api as dfn_core_api;
 use ic_cdk_macros::*;
 use ic_kit::{ic, Principal};
 use std::cell::RefCell;
@@ -94,7 +95,6 @@ pub enum TxError {
     Other,
 }
 pub type TxReceipt = Result<Nat, TxError>;
-
 
 thread_local! {
     static BALANCES: RefCell<HashMap<Principal, Nat>> = RefCell::new(HashMap::default());
@@ -200,7 +200,7 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
     let fee = _get_fee();
     if balance_of(from) < value.clone() + fee.clone() {
         return Err(TxError::InsufficientBalance);
-    } 
+    }
     _charge_fee(from, fee.clone());
     _transfer(from, to, value.clone());
     _history_inc();
@@ -531,7 +531,7 @@ fn get_metadata() -> Metadata {
             totalSupply: s.total_supply.clone(),
             owner: s.owner,
             fee: s.fee.clone(),
-        }    
+        }
     })
 }
 
@@ -621,25 +621,11 @@ fn main() {
 
 #[pre_upgrade]
 fn pre_upgrade() {
-    let stats = STATS.with(|s| {
-        s.borrow().clone()
-    });
-    let balances = BALANCES.with(|b| {
-        b.borrow().clone()
-    });
-    let allows = ALLOWS.with(|a| {
-        a.borrow().clone()
-    });
-    let tx_log = TXLOG.with(|t| {
-        t.borrow().clone()
-    });
-    ic::stable_store((
-        stats,
-        balances,
-        allows,
-        tx_log,
-    ))
-    .unwrap();
+    let stats = STATS.with(|s| s.borrow().clone());
+    let balances = BALANCES.with(|b| b.borrow().clone());
+    let allows = ALLOWS.with(|a| a.borrow().clone());
+    let tx_log = TXLOG.with(|t| t.borrow().clone());
+    ic::stable_store((stats, balances, allows, tx_log)).unwrap();
 }
 
 #[post_upgrade]
@@ -666,6 +652,13 @@ fn post_upgrade() {
         let mut tx_log = t.borrow_mut();
         *tx_log = tx_log_stored;
     });
+}
+
+#[export_name = "canister_heartbeat"]
+pub fn canister_heartbeat() {
+    let future = flush_tx_log();
+
+    dfn_core_api::futures::spawn(future);
 }
 
 async fn add_record(
@@ -697,9 +690,7 @@ async fn add_record(
 }
 
 pub async fn insert_into_cap(ie: IndefiniteEvent) -> TxReceipt {
-    let mut tx_log = TXLOG.with(|t| {
-       t.take()
-    });
+    let mut tx_log = TXLOG.with(|t| t.take());
     if let Some(failed_ie) = tx_log.ie_records.pop_front() {
         let _ = insert_into_cap_priv(failed_ie).await;
     }
@@ -720,4 +711,11 @@ async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
     }
 
     insert_res
+}
+
+async fn flush_tx_log() {
+    let mut tx_log = TXLOG.with(|t| t.take());
+    if let Some(failed_ie) = tx_log.ie_records.pop_front() {
+        let _ = insert_into_cap_priv(failed_ie).await;
+    }
 }
