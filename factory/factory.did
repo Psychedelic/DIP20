@@ -7,7 +7,9 @@ type FactoryError = variant {
 };
 
 type TokenType = variant {
-  DIP20Motoko;
+  DIP20;
+  DIP721;
+  DIP1155;
 };
 
 type Result = variant { Ok : principal; Err : FactoryError };
@@ -22,6 +24,8 @@ service : (principal) -> {
       vec principal,
       nat64,
       nat,
+      principal,
+      principal,
       TokenType,
     ) -> (Result);
   owner : () -> (principal) query;
