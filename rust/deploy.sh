@@ -12,7 +12,7 @@ sudo dfx canister --no-wallet install token --argument "(
    \"test token\", 
    \"TT\", 
    8:nat8, 
-   100000000:nat64, 
+   100000000:nat, 
    $OWNER, 
    0,
    $OWNER, 
