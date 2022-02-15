@@ -5,4 +5,16 @@ sudo dfx build token
 OWNER="principal \"$( \
    dfx identity get-principal
 )\""
-sudo dfx canister --no-wallet install token --argument "(\"test logo\", \"test token\", \"TT\", 8:nat8, 100000000:nat64, $OWNER, 0)" -m=reinstall
+CAP_ID="principal \"e22n6-waaaa-aaaah-qcd2q-cai\""
+
+sudo dfx canister --no-wallet install token --argument "(
+   \"test logo\", 
+   \"test token\", 
+   \"TT\", 
+   8:nat8, 
+   100000000:nat64, 
+   $OWNER, 
+   0,
+   $OWNER, 
+   $CAP_ID, 
+)" -m=reinstall
