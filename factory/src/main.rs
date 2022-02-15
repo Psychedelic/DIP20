@@ -8,7 +8,9 @@ use ic_kit::{
 
 #[derive(CandidType, Deserialize)]
 pub enum TokenType {
-    DIP20Motoko,
+    DIP20,
+    DIP721,
+    DIP1155,
 }
 
 #[derive(CandidType, Deserialize)]
@@ -20,7 +22,7 @@ pub enum FactoryError {
     InstallCodeError,
 }
 
-const WASM: &[u8] = include_bytes!("../../motoko/.dfx/local/canisters/token/token.wasm");
+const WASM_DIP20: &[u8] = include_bytes!("./wasm/dip20/token.wasm");
 
 #[update]
 #[candid_method(update)]
@@ -34,6 +36,8 @@ pub async fn create(
     mut controllers: Vec<Principal>,
     cycles: u64,
     fee: Nat,
+    fee_to: Principal,
+    cap: Principal,
     _token_type: TokenType,
 ) -> Result<Principal, FactoryError> {
     assert_eq!(
@@ -92,7 +96,7 @@ pub async fn create(
         arg: Vec<u8>,
     }
 
-    let arg = match encode_args((logo, name, symbol, decimals, total_supply, owner, fee)) {
+    let arg = match encode_args((logo, name, symbol, decimals, total_supply, owner, fee, fee_to, cap)) {
         Err(_) => return Err(FactoryError::EncodeError),
         Ok(res) => res,
     };
@@ -100,7 +104,7 @@ pub async fn create(
     let install_config = InstallCodeArgumentBorrowed {
         mode: InstallMode::Install,
         canister_id,
-        wasm_module: WASM,
+        wasm_module: WASM_DIP20,
         arg,
     };
 
