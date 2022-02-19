@@ -1,6 +1,8 @@
 .DS_Store
 .dfx/
 build/
-target
+target/
 .config
 .cache
+.temp/
+canister_ids.json
