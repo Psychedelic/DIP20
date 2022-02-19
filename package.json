@@ -1,10 +1,10 @@
 {
-	"name": "dip721",
-	"description": "This package provides the DIP-721 developer utility scripts",
+	"name": "dip20",
+	"description": "This package provides the DIP20 developer utility scripts",
 	"version": "0.0.1",
 	"main": "index.js",
-	"repository": "https://github.com/Psychedelic/DIP721.git",
-	"author": "Helder Oliveira <helder@fleek.co>",
+	"repository": "https://github.com/Psychedelic/DIP20.git",
+	"author": "Ossian Mapes <oz@fleek.co>",
 	"license": "MIT",
 	"scripts": {
 		"dip20:healthcheck": "./.scripts/healthcheck.sh",
