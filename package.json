@@ -1,0 +1,16 @@
+{
+	"name": "dip721",
+	"description": "This package provides the DIP-721 developer utility scripts",
+	"version": "0.0.1",
+	"main": "index.js",
+	"repository": "https://github.com/Psychedelic/DIP721.git",
+	"author": "Helder Oliveira <helder@fleek.co>",
+	"license": "MIT",
+	"scripts": {
+		"dip20:healthcheck": "./.scripts/healthcheck.sh",
+		"dip20:candid": "cargo run --release > ./token/candid/token.did",
+		"dip20:deploy": "./.scripts/deploy.sh",
+		"dip20:reset": "dfx stop && rm -rf .dfx",
+		"test": "cargo test -- --show-output"
+	}
+}

@@ -7,7 +7,7 @@ OWNER="principal \"$( \
 )\""
 CAP_ID="principal \"e22n6-waaaa-aaaah-qcd2q-cai\""
 
-sudo dfx canister --no-wallet install token --argument "(
+sudo dfx canister --no-wallet deploy token --argument "(
    \"test logo\", 
    \"test token\", 
    \"TT\", 
