@@ -189,7 +189,7 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
     if balance_of(from) < value.clone() + stats.fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
-    _charge_fee(from, stats.fee.clone());
+    _charge_fee(from);
     _transfer(from, to, value.clone());
     stats.history_size += 1;
 
@@ -219,7 +219,7 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
     if from_balance < value.clone() + stats.fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
-    _charge_fee(from, stats.fee.clone());
+    _charge_fee(from);
     _transfer(from, to, value.clone());
     let allowances = ic::get_mut::<Allowances>();
     match allowances.get(&from) {
@@ -264,7 +264,7 @@ async fn approve(spender: Principal, value: Nat) -> TxReceipt {
     if balance_of(owner) < stats.fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
-    _charge_fee(owner, stats.fee.clone());
+    _charge_fee(owner);
     let v = value.clone() + stats.fee.clone();
     let allowances = ic::get_mut::<Allowances>();
     match allowances.get(&owner) {
@@ -845,11 +845,11 @@ fn _transfer(from: Principal, to: Principal, value: Nat) {
     }
 }
 
-fn _charge_fee(user: Principal, fee: Nat) {
+fn _charge_fee(user: Principal) {
     STATS.with(|s| {
         let stats = s.borrow();
         if stats.fee > Nat::from(0) {
-            _transfer(user, stats.fee_to, stats.fee);
+            _transfer(user, stats.fee_to, stats.fee.clone());
         }
     });
 }
