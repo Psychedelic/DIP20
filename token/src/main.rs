@@ -156,17 +156,19 @@ fn init(
     fee_to: Principal,
     cap: Principal,
 ) {
-    let stats = ic::get_mut::<StatsData>();
-    stats.logo = logo;
-    stats.name = name;
-    stats.symbol = symbol;
-    stats.decimals = decimals;
-    stats.total_supply = initial_supply.clone();
-    stats.owner = owner;
-    stats.fee = fee.clone();
-    stats.fee_to = fee_to;
-    stats.history_size = 1;
-    stats.deploy_time = ic::time();
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.logo = logo;
+        stats.name = name;
+        stats.symbol = symbol;
+        stats.decimals = decimals;
+        stats.total_supply = initial_supply.clone();
+        stats.owner = owner;
+        stats.fee = fee.clone();
+        stats.fee_to = fee_to;
+        stats.history_size = 1;
+        stats.deploy_time = ic::time();
+    });
     handshake(1_000_000_000_000, Some(cap));
     let balances = ic::get_mut::<Balances>();
     balances.insert(owner, initial_supply.clone());
@@ -191,7 +193,7 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
     }
     _charge_fee(from);
     _transfer(from, to, value.clone());
-    stats.history_size += 1;
+    _history_inc();
 
     add_record(
         Some(from),
@@ -242,7 +244,7 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
             assert!(false);
         }
     }
-    stats.history_size += 1;
+    _history_inc();
     add_record(
         Some(owner),
         Operation::TransferFrom,
@@ -291,7 +293,7 @@ async fn approve(spender: Principal, value: Nat) -> TxReceipt {
             }
         }
     }
-    stats.history_size += 1;
+    _history_inc();
     add_record(
         Some(owner),
         Operation::Approve,
@@ -543,7 +545,7 @@ async fn withdraw(value: u64, to: String) -> TxReceipt {
     .await;
     match result {
         Ok(_) => {
-            stats.history_size += 1;
+            _history_inc();
             add_record(
                 Some(caller),
                 Operation::Burn,
