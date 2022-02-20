@@ -170,8 +170,8 @@ fn init(
         stats.deploy_time = ic::time();
     });
     handshake(1_000_000_000_000, Some(cap));
-    let balances = ic::get_mut::<Balances>();
-    balances.insert(owner, initial_supply.clone());
+    _insert_balance(owner, initial_supply.clone());
+
     let genesis = ic::get_mut::<Genesis>();
     genesis.caller = Some(owner);
     genesis.op = Operation::Mint;
@@ -388,8 +388,8 @@ async fn mint(sub_account: Option<Subaccount>, block_height: BlockHeight) -> TxR
     let value = Nat::from(Tokens::get_e8s(amount));
 
     let user_balance = balance_of(caller);
-    let balances = ic::get_mut::<Balances>();
-    balances.insert(caller, user_balance + value.clone());
+
+    _insert_balance(caller, user_balance + value.clone());
     STATS.with(|s| {
         let mut stats = s.borrow_mut();
         stats.total_supply += value.clone();
@@ -494,8 +494,7 @@ async fn mint_for(
     let value = Nat::from(Tokens::get_e8s(amount));
 
     let user_balance = balance_of(to_p);
-    let balances = ic::get_mut::<Balances>();
-    balances.insert(to_p, user_balance + value.clone());
+    _insert_balance(to_p, user_balance + value.clone());
     let stats = ic::get_mut::<StatsData>();
     stats.total_supply += value.clone();
     stats.history_size += 1;
@@ -534,8 +533,7 @@ async fn withdraw(value: u64, to: String) -> TxReceipt {
         to: AccountIdentifier::from_hex(&to).unwrap(),
         created_at_time: None,
     };
-    let balances = ic::get_mut::<Balances>();
-    balances.insert(caller, caller_balance.clone() - value_nat.clone());
+    _insert_balance(caller, caller_balance.clone() - value_nat.clone());
     stats.total_supply -= value_nat.clone();
     let result: Result<(u64,), _> = ic::call(
         Principal::from(CanisterId::get(LEDGER_CANISTER_ID)),
@@ -559,7 +557,7 @@ async fn withdraw(value: u64, to: String) -> TxReceipt {
             .await
         }
         Err(_) => {
-            balances.insert(caller, balance_of(caller) + value_nat.clone());
+            _insert_balance(caller, balance_of(caller) + value_nat.clone());
             stats.total_supply += value_nat;
             return Err(TxError::LedgerTrap);
         }
@@ -816,19 +814,34 @@ pub fn tx_log<'a>() -> &'a mut TxLog {
     ic_kit::ic::get_mut::<TxLog>()
 }
 
+fn _insert_balance(from: Principal, value: Nat) {
+    BALANCES.with(|b| {
+        let mut balances = b.borrow_mut();
+        balances.insert(from, value);
+    });
+}
+
+fn _remove_balance(from: Principal) {
+    BALANCES.with(|b| {
+        let mut balances = b.borrow_mut();
+        balances.remove(&from);
+    });
+}
+
 fn _transfer(from: Principal, to: Principal, value: Nat) {
-    let balances = ic::get_mut::<Balances>();
     let from_balance = balance_of(from);
     let from_balance_new = from_balance - value.clone();
+
+    // TODO: check this logic ↴
     if from_balance_new != 0 {
-        balances.insert(from, from_balance_new);
+        _insert_balance(from, from_balance_new);
     } else {
-        balances.remove(&from);
+        _remove_balance(from)
     }
     let to_balance = balance_of(to);
     let to_balance_new = to_balance + value;
     if to_balance_new != 0 {
-        balances.insert(to, to_balance_new);
+        _insert_balance(to, to_balance_new);
     }
 }
 
