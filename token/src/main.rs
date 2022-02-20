@@ -388,9 +388,11 @@ async fn mint(sub_account: Option<Subaccount>, block_height: BlockHeight) -> TxR
     let user_balance = balance_of(caller);
     let balances = ic::get_mut::<Balances>();
     balances.insert(caller, user_balance + value.clone());
-    let stats = ic::get_mut::<StatsData>();
-    stats.total_supply += value.clone();
-    stats.history_size += 1;
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.total_supply += value.clone();
+        stats.history_size += 1;
+    });
 
     add_record(
         Some(caller),
@@ -587,65 +589,81 @@ fn allowance(owner: Principal, spender: Principal) -> Nat {
 #[query]
 #[candid_method(query)]
 fn logo() -> String {
-    let stats = ic::get::<StatsData>();
-    stats.logo.clone()
+    STATS.with(|s| {
+        let stats = s.borrow();
+        stats.logo.clone()
+    })
 }
 
 #[query(name = "name")]
 #[candid_method(query)]
 fn name() -> String {
-    let stats = ic::get::<StatsData>();
-    stats.name.clone()
+    STATS.with(|s| {
+        let stats = s.borrow();
+        stats.name.clone()
+    })
 }
 
 #[query(name = "symbol")]
 #[candid_method(query)]
 fn symbol() -> String {
-    let stats = ic::get::<StatsData>();
-    stats.symbol.clone()
+    STATS.with(|s| {
+        let stats = s.borrow();
+        stats.symbol.clone()
+    })
 }
 
 #[query(name = "decimals")]
 #[candid_method(query)]
 fn decimals() -> u8 {
-    let stats = ic::get::<StatsData>();
-    stats.decimals
+    STATS.with(|s| {
+        let stats = s.borrow();
+        stats.decimals
+    })
 }
 
 #[query(name = "totalSupply")]
 #[candid_method(query, rename = "totalSupply")]
 fn total_supply() -> Nat {
-    let stats = ic::get::<StatsData>();
-    stats.total_supply.clone()
+    STATS.with(|s| {
+        let stats = s.borrow();
+        stats.total_supply.clone()
+    })
 }
 
 #[query(name = "owner")]
 #[candid_method(query)]
 fn owner() -> Principal {
-    let stats = ic::get::<StatsData>();
-    stats.owner
+    STATS.with(|s| {
+        let stats = s.borrow();
+        stats.owner
+    })
 }
 
 #[query(name = "getMetadata")]
 #[candid_method(query, rename = "getMetadata")]
 fn get_metadata() -> Metadata {
-    let s = ic::get::<StatsData>().clone();
-    Metadata {
-        logo: s.logo,
-        name: s.name,
-        symbol: s.symbol,
-        decimals: s.decimals,
-        totalSupply: s.total_supply,
-        owner: s.owner,
-        fee: s.fee,
-    }
+    STATS.with(|s| {
+        let stats = s.borrow().clone();
+        Metadata {
+            logo: stats.logo,
+            name: stats.name,
+            symbol: stats.symbol,
+            decimals: stats.decimals,
+            totalSupply: stats.total_supply,
+            owner: stats.owner,
+            fee: stats.fee,
+        }
+    })
 }
 
 #[query(name = "historySize")]
 #[candid_method(query, rename = "historySize")]
 fn history_size() -> usize {
-    let stats = ic::get::<StatsData>();
-    stats.history_size
+    STATS.with(|s| {
+        let stats = s.borrow();
+        stats.history_size
+    })
 }
 
 #[query(name = "getTokenInfo")]
@@ -718,37 +736,46 @@ fn is_block_used(block_number: BlockHeight) -> bool {
 #[update(name = "setName", guard = _is_auth)]
 #[candid_method(update, rename = "setName")]
 fn set_name(name: String) {
-    let stats = ic::get_mut::<StatsData>();
-    assert_eq!(ic::caller(), stats.owner);
-    stats.name = name;
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.name = name;
+    });
 }
 
 #[update(name = "setLogo", guard = _is_auth)]
 #[candid_method(update, rename = "setLogo")]
 fn set_logo(logo: String) {
-    let stats = ic::get_mut::<StatsData>();
-    stats.logo = logo;
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.logo = logo;
+    });
 }
 
 #[update(name = "setFee", guard = _is_auth)]
 #[candid_method(update, rename = "setFee")]
 fn set_fee(fee: Nat) {
-    let stats = ic::get_mut::<StatsData>();
-    stats.fee = fee;
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.fee = fee;
+    });
 }
 
 #[update(name = "setFeeTo", guard = _is_auth)]
 #[candid_method(update, rename = "setFeeTo")]
 fn set_fee_to(fee_to: Principal) {
-    let stats = ic::get_mut::<StatsData>();
-    stats.fee_to = fee_to;
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.fee_to = fee_to;
+    });
 }
 
 #[update(name = "setOwner", guard = _is_auth)]
 #[candid_method(update, rename = "setOwner")]
 fn set_owner(owner: Principal) {
-    let stats = ic::get_mut::<StatsData>();
-    stats.owner = owner;
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.owner = owner;
+    });
 }
 
 #[update(name = "setGenesis", guard = _is_auth)]
@@ -770,13 +797,15 @@ async fn set_genesis() -> TxReceipt {
 
 /* INTERNAL FNS */
 
+// TODO: use controllers for ownership
+// this will require the canister to be a controller of itself (like dip721)
 fn _is_auth() -> Result<(), String> {
     STATS.with(|s| {
         let stats = s.borrow();
         if ic_cdk::api::caller() == stats.owner {
             Ok(())
         } else {
-            Err("unauthorized".to_string())
+            Err("Error: Unauthorized principal ID".to_string())
         }
     })
 }
