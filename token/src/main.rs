@@ -562,57 +562,6 @@ async fn withdraw(value: u64, to: String) -> TxReceipt {
     }
 }
 
-#[update(name = "setLogo")]
-#[candid_method(update, rename = "setLogo")]
-fn set_logo(logo: String) {
-    let stats = ic::get_mut::<StatsData>();
-    assert_eq!(ic::caller(), stats.owner);
-    stats.logo = logo;
-}
-
-#[update(name = "setFee")]
-#[candid_method(update, rename = "setFee")]
-fn set_fee(fee: Nat) {
-    let stats = ic::get_mut::<StatsData>();
-    assert_eq!(ic::caller(), stats.owner);
-    stats.fee = fee;
-}
-
-#[update(name = "setFeeTo")]
-#[candid_method(update, rename = "setFeeTo")]
-fn set_fee_to(fee_to: Principal) {
-    let stats = ic::get_mut::<StatsData>();
-    assert_eq!(ic::caller(), stats.owner);
-    stats.fee_to = fee_to;
-}
-
-#[update(name = "setOwner")]
-#[candid_method(update, rename = "setOwner")]
-fn set_owner(owner: Principal) {
-    let stats = ic::get_mut::<StatsData>();
-    assert_eq!(ic::caller(), stats.owner);
-    stats.owner = owner;
-}
-
-#[update(name = "setGenesis")]
-#[candid_method(update, rename = "setGenesis")]
-async fn set_genesis() -> TxReceipt {
-    let stats = ic::get_mut::<StatsData>();
-    assert_eq!(ic::caller(), stats.owner);
-    let genesis = ic::get::<Genesis>();
-    add_record(
-        genesis.caller,
-        genesis.op,
-        genesis.from,
-        genesis.to,
-        genesis.amount.clone(),
-        genesis.fee.clone(),
-        genesis.timestamp,
-        genesis.status,
-    )
-    .await
-}
-
 #[query(name = "balanceOf")]
 #[candid_method(query, rename = "balanceOf")]
 fn balance_of(id: Principal) -> Nat {
@@ -647,14 +596,6 @@ fn logo() -> String {
 fn name() -> String {
     let stats = ic::get::<StatsData>();
     stats.name.clone()
-}
-
-#[update(name = "setName")]
-#[candid_method(update, rename = "setName")]
-fn set_name(name: String) {
-    let stats = ic::get_mut::<StatsData>();
-    assert_eq!(ic::caller(), stats.owner);
-    stats.name = name;
 }
 
 #[query(name = "symbol")]
@@ -772,58 +713,73 @@ fn is_block_used(block_number: BlockHeight) -> bool {
     ic::get::<UsedBlocks>().contains(&block_number)
 }
 
-#[cfg(any(target_arch = "wasm32", test))]
-fn main() {}
+/* PERMISSIONED FNS */
 
-#[cfg(not(any(target_arch = "wasm32", test)))]
-fn main() {
-    candid::export_service!();
-    std::print!("{}", __export_service());
-}
-
-// TODO: fix upgrade functions
-#[pre_upgrade]
-fn pre_upgrade() {
-    ic::stable_store((
-        ic::get::<StatsData>().clone(),
-        ic::get::<Balances>(),
-        ic::get::<Allowances>(),
-        ic::get::<UsedBlocks>(),
-        tx_log(),
-        CapEnv::to_archive(),
-    ))
-    .unwrap();
-}
-
-#[post_upgrade]
-fn post_upgrade() {
-    let (
-        metadata_stored,
-        balances_stored,
-        allowances_stored,
-        blocks_stored,
-        tx_log_stored,
-        cap_env,
-    ): (StatsData, Balances, Allowances, UsedBlocks, TxLog, CapEnv) = ic::stable_restore().unwrap();
+#[update(name = "setName", guard = _is_auth)]
+#[candid_method(update, rename = "setName")]
+fn set_name(name: String) {
     let stats = ic::get_mut::<StatsData>();
-    *stats = metadata_stored;
+    assert_eq!(ic::caller(), stats.owner);
+    stats.name = name;
+}
 
-    let balances = ic::get_mut::<Balances>();
-    *balances = balances_stored;
+#[update(name = "setLogo", guard = _is_auth)]
+#[candid_method(update, rename = "setLogo")]
+fn set_logo(logo: String) {
+    let stats = ic::get_mut::<StatsData>();
+    stats.logo = logo;
+}
 
-    let allowances = ic::get_mut::<Allowances>();
-    *allowances = allowances_stored;
+#[update(name = "setFee", guard = _is_auth)]
+#[candid_method(update, rename = "setFee")]
+fn set_fee(fee: Nat) {
+    let stats = ic::get_mut::<StatsData>();
+    stats.fee = fee;
+}
 
-    let blocks = ic::get_mut::<UsedBlocks>();
-    *blocks = blocks_stored;
+#[update(name = "setFeeTo", guard = _is_auth)]
+#[candid_method(update, rename = "setFeeTo")]
+fn set_fee_to(fee_to: Principal) {
+    let stats = ic::get_mut::<StatsData>();
+    stats.fee_to = fee_to;
+}
 
-    let tx_log = tx_log();
-    *tx_log = tx_log_stored;
+#[update(name = "setOwner", guard = _is_auth)]
+#[candid_method(update, rename = "setOwner")]
+fn set_owner(owner: Principal) {
+    let stats = ic::get_mut::<StatsData>();
+    stats.owner = owner;
+}
 
-    CapEnv::load_from_archive(cap_env);
+#[update(name = "setGenesis", guard = _is_auth)]
+#[candid_method(update, rename = "setGenesis")]
+async fn set_genesis() -> TxReceipt {
+    let genesis = ic::get::<Genesis>();
+    add_record(
+        genesis.caller,
+        genesis.op,
+        genesis.from,
+        genesis.to,
+        genesis.amount.clone(),
+        genesis.fee.clone(),
+        genesis.timestamp,
+        genesis.status,
+    )
+    .await
 }
 
 /* INTERNAL FNS */
+
+fn _is_auth() -> Result<(), String> {
+    STATS.with(|s| {
+        let stats = s.borrow();
+        if ic_cdk::api::caller() == stats.owner {
+            Ok(())
+        } else {
+            Err("unauthorized".to_string())
+        }
+    })
+}
 
 pub fn tx_log<'a>() -> &'a mut TxLog {
     ic_kit::ic::get_mut::<TxLog>()
@@ -854,6 +810,13 @@ fn _charge_fee(user: Principal) {
     });
 }
 
+fn _history_inc() {
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.history_size += 1;
+    })
+}
+
 fn _get_fee() -> Nat {
     STATS.with(|s| {
         let stats = s.borrow();
@@ -865,13 +828,6 @@ fn _get_owner() -> Principal {
     STATS.with(|s| {
         let stats = s.borrow();
         stats.owner
-    })
-}
-
-fn _history_inc() {
-    STATS.with(|s| {
-        let mut stats = s.borrow_mut();
-        stats.history_size += 1;
     })
 }
 
@@ -922,6 +878,59 @@ async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
     }
 
     insert_res
+}
+
+/* MISC FNS */
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn main() {}
+
+#[cfg(not(any(target_arch = "wasm32", test)))]
+fn main() {
+    candid::export_service!();
+    std::print!("{}", __export_service());
+}
+
+// TODO: fix upgrade functions
+#[pre_upgrade]
+fn pre_upgrade() {
+    ic::stable_store((
+        ic::get::<StatsData>().clone(),
+        ic::get::<Balances>(),
+        ic::get::<Allowances>(),
+        ic::get::<UsedBlocks>(),
+        tx_log(),
+        CapEnv::to_archive(),
+    ))
+    .unwrap();
+}
+
+#[post_upgrade]
+fn post_upgrade() {
+    let (
+        metadata_stored,
+        balances_stored,
+        allowances_stored,
+        blocks_stored,
+        tx_log_stored,
+        cap_env,
+    ): (StatsData, Balances, Allowances, UsedBlocks, TxLog, CapEnv) = ic::stable_restore().unwrap();
+    let stats = ic::get_mut::<StatsData>();
+    *stats = metadata_stored;
+
+    let balances = ic::get_mut::<Balances>();
+    *balances = balances_stored;
+
+    let allowances = ic::get_mut::<Allowances>();
+    *allowances = allowances_stored;
+
+    let blocks = ic::get_mut::<UsedBlocks>();
+    *blocks = blocks_stored;
+
+    let tx_log = tx_log();
+    *tx_log = tx_log_stored;
+
+    CapEnv::load_from_archive(cap_env);
 }
 
 /* TESTS */
