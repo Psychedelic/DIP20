@@ -2,6 +2,8 @@
 
 ## DIP20 - Introduction
 
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-2.0.0-blue.svg)](https://conventionalcommits.org) [![Healthcheck](https://github.com/Psychedelic/DIP20/actions/workflows/pr-healthcheck-runner.yml/badge.svg)](https://github.com/Psychedelic/DIP20/actions/workflows/pr-healthcheck-runner.yml)
+
 Token standards are essential for the Internet Computer ecosystem, especially for the decentralized finance ecosystem (DeFi) system. In this token interface, we implemented an ERC-20 style token standard in both Motoko and Rust, the standard is named DIP20.
 
 This standard allows for a common and familiar interface that not only provides a quick entry point for existing blockchain developers, but future interoperability options between the Internet Computer and Ethereum, through the process of sustaining the same shared interfaces.
@@ -9,7 +11,6 @@ This standard allows for a common and familiar interface that not only provides 
 You can find the interface descriptions in the [specification file](./spec.md).
 
 [This branch](https://github.com/dfinance-tech/ic-token/tree/templates) contains code of several other token canister templates.
-
 
 ## Development
 
@@ -44,9 +45,6 @@ dfx canister install token --argument="(\"data:image/jpeg;base64,...\", \"DFinan
 
 Refer to `demo.sh` in the corresponding sub directory for more details.
 
-
-
 ## Contributing
 
 We'd like to collaborate with the community to provide better token standard implementation for the developers on the IC, if you have some ideas you'd like to discuss, submit an issue, if you want to improve the code or you made a different implementation, make a pull request!
-
