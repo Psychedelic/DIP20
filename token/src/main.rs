@@ -227,27 +227,29 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
     }
     _charge_fee(from);
     _transfer(from, to, value.clone());
-    let allowances = ic::get_mut::<Allowances>();
-    match allowances.get(&from) {
-        Some(inner) => {
-            let result = inner.get(&owner).unwrap().clone();
-            let mut temp = inner.clone();
-            if result.clone() - value.clone() - fee.clone() != 0 {
-                temp.insert(owner, result - value.clone() - fee.clone());
-                allowances.insert(from, temp);
-            } else {
-                temp.remove(&owner);
-                if temp.len() == 0 {
-                    allowances.remove(&from);
-                } else {
+    ALLOWS.with(|a| {
+        let mut allowances = a.borrow_mut();
+        match allowances.get(&from) {
+            Some(inner) => {
+                let result = inner.get(&owner).unwrap().clone();
+                let mut temp = inner.clone();
+                if result.clone() - value.clone() - fee.clone() != 0 {
+                    temp.insert(owner, result - value.clone() - fee.clone());
                     allowances.insert(from, temp);
+                } else {
+                    temp.remove(&owner);
+                    if temp.len() == 0 {
+                        allowances.remove(&from);
+                    } else {
+                        allowances.insert(from, temp);
+                    }
                 }
             }
+            None => {
+                assert!(false);
+            }
         }
-        None => {
-            assert!(false);
-        }
-    }
+    });
     _history_inc();
     add_record(
         Some(owner),
@@ -266,37 +268,38 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
 #[candid_method(update)]
 async fn approve(spender: Principal, value: Nat) -> TxReceipt {
     let owner = ic::caller();
-    let stats = ic::get_mut::<StatsData>();
-    if balance_of(owner) < stats.fee.clone() {
+    let fee = _get_fee();
+    if balance_of(owner) < fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
     _charge_fee(owner);
-    let v = value.clone() + stats.fee.clone();
-    let allowances = ic::get_mut::<Allowances>();
-    match allowances.get(&owner) {
-        Some(inner) => {
-            let mut temp = inner.clone();
-            if v != 0 {
-                temp.insert(spender, v.clone());
-                allowances.insert(owner, temp);
-            } else {
-                temp.remove(&spender);
-                if temp.len() == 0 {
-                    allowances.remove(&owner);
-                } else {
+    let v = value.clone() + fee.clone();
+    ALLOWS.with(|a| {
+        let mut allowances = a.borrow_mut();
+        match allowances.get(&owner) {
+            Some(inner) => {
+                let mut temp = inner.clone();
+                if v != 0 {
+                    temp.insert(spender, v.clone());
                     allowances.insert(owner, temp);
+                } else {
+                    temp.remove(&spender);
+                    if temp.len() == 0 {
+                        allowances.remove(&owner);
+                    } else {
+                        allowances.insert(owner, temp);
+                    }
+                }
+            }
+            None => {
+                if v != 0 {
+                    let mut inner = HashMap::new();
+                    inner.insert(spender, v.clone());
+                    allowances.insert(owner, inner);
                 }
             }
         }
-        None => {
-            if v != 0 {
-                let mut inner = HashMap::new();
-                inner.insert(spender, v.clone());
-                let allowances = ic::get_mut::<Allowances>();
-                allowances.insert(owner, inner);
-            }
-        }
-    }
+    });
     _history_inc();
     add_record(
         Some(owner),
@@ -304,7 +307,7 @@ async fn approve(spender: Principal, value: Nat) -> TxReceipt {
         owner,
         spender,
         v,
-        stats.fee.clone(),
+        fee,
         ic::time(),
         TransactionStatus::Succeeded,
     )
@@ -522,8 +525,8 @@ async fn withdraw(value: u64, to: String) -> TxReceipt {
     let caller = ic::caller();
     let caller_balance = balance_of(caller);
     let value_nat = Nat::from(value);
-    let stats = ic::get_mut::<StatsData>();
-    if caller_balance.clone() < value_nat.clone() || stats.total_supply < value_nat.clone() {
+    let total_supply = _supply_get();
+    if caller_balance.clone() < value_nat.clone() || total_supply < value_nat.clone() {
         return Err(TxError::InsufficientBalance);
     }
     let args = SendArgs {
@@ -860,6 +863,13 @@ fn _supply_dec(value: Nat) {
     STATS.with(|s| {
         let mut stats = s.borrow_mut();
         stats.total_supply -= value;
+    })
+}
+
+fn _supply_get() -> Nat {
+    STATS.with(|s| {
+        let stats = s.borrow();
+        stats.total_supply.clone()
     })
 }
 
