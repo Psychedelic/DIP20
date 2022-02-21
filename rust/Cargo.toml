@@ -12,6 +12,7 @@ serde = "1.0"
 ic-kit = "0.4.3"
 ic-cdk = "0.3.1"
 assert-panic = "1.0.1"
+dfn_core = { git = "https://github.com/dfinity/ic", rev = "96b1607f2c6d6e224037abcd0cca3740dabfc324" }
 cap-std = { git = "https://github.com/Psychedelic/cap", branch = "main", package="cap-standards", features = ["alpha-dip20", "cap-sdk", "sdk-impls"] }
 cap-sdk = { git = "https://github.com/Psychedelic/cap.git", branch = "main" }
 
