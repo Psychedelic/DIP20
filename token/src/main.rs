@@ -19,7 +19,7 @@ use ledger_canister::{
     tokens::Tokens,
     BlockHeight, BlockRes, Memo, Operation as Operate, SendArgs,
 };
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::Into;
 use std::iter::FromIterator;
@@ -85,6 +85,7 @@ struct TokenInfo {
     cycles: u64,
 }
 
+#[derive(Deserialize, CandidType, Clone, Debug)]
 struct Genesis {
     caller: Option<Principal>,
     op: Operation,
@@ -136,6 +137,7 @@ thread_local! {
     static ALLOWS: RefCell<HashMap<Principal, HashMap<Principal, Nat>>> = RefCell::new(HashMap::default());
     static STATS: RefCell<StatsData> = RefCell::new(StatsData::default());
     static TXLOG: RefCell<TxLog> = RefCell::new(TxLog::default());
+    static GENESIS: RefCell<Genesis> = RefCell::new(Genesis::default());
     /*   flexible   */
 }
 
@@ -170,25 +172,27 @@ fn init(
         stats.deploy_time = ic::time();
     });
     handshake(1_000_000_000_000, Some(cap));
-    _insert_balance(owner, initial_supply.clone());
+    _balance_ins(owner, initial_supply.clone());
 
-    let genesis = ic::get_mut::<Genesis>();
-    genesis.caller = Some(owner);
-    genesis.op = Operation::Mint;
-    genesis.from = Principal::from_text("aaaaa-aa").unwrap();
-    genesis.to = owner;
-    genesis.amount = initial_supply;
-    genesis.fee = fee;
-    genesis.timestamp = ic::time();
-    genesis.status = TransactionStatus::Succeeded;
+    GENESIS.with(|g| {
+        let mut genesis = g.borrow_mut();
+        genesis.caller = Some(owner);
+        genesis.op = Operation::Mint;
+        genesis.from = Principal::from_text("aaaaa-aa").unwrap();
+        genesis.to = owner;
+        genesis.amount = initial_supply;
+        genesis.fee = fee;
+        genesis.timestamp = ic::time();
+        genesis.status = TransactionStatus::Succeeded;
+    });
 }
 
 #[update(name = "transfer")]
 #[candid_method(update)]
 async fn transfer(to: Principal, value: Nat) -> TxReceipt {
     let from = ic::caller();
-    let stats = ic::get_mut::<StatsData>();
-    if balance_of(from) < value.clone() + stats.fee.clone() {
+    let fee = _get_fee();
+    if balance_of(from) < value.clone() + fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
     _charge_fee(from);
@@ -201,7 +205,7 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
         from,
         to,
         value,
-        stats.fee.clone(),
+        fee.clone(),
         ic::time(),
         TransactionStatus::Succeeded,
     )
@@ -213,12 +217,12 @@ async fn transfer(to: Principal, value: Nat) -> TxReceipt {
 async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt {
     let owner = ic::caller();
     let from_allowance = allowance(from, owner);
-    let stats = ic::get_mut::<StatsData>();
-    if from_allowance < value.clone() + stats.fee.clone() {
+    let fee = _get_fee();
+    if from_allowance < value.clone() + fee.clone() {
         return Err(TxError::InsufficientAllowance);
     }
     let from_balance = balance_of(from);
-    if from_balance < value.clone() + stats.fee.clone() {
+    if from_balance < value.clone() + fee.clone() {
         return Err(TxError::InsufficientBalance);
     }
     _charge_fee(from);
@@ -228,8 +232,8 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
         Some(inner) => {
             let result = inner.get(&owner).unwrap().clone();
             let mut temp = inner.clone();
-            if result.clone() - value.clone() - stats.fee.clone() != 0 {
-                temp.insert(owner, result - value.clone() - stats.fee.clone());
+            if result.clone() - value.clone() - fee.clone() != 0 {
+                temp.insert(owner, result - value.clone() - fee.clone());
                 allowances.insert(from, temp);
             } else {
                 temp.remove(&owner);
@@ -251,7 +255,7 @@ async fn transfer_from(from: Principal, to: Principal, value: Nat) -> TxReceipt 
         from,
         to,
         value,
-        stats.fee.clone(),
+        fee,
         ic::time(),
         TransactionStatus::Succeeded,
     )
@@ -389,12 +393,10 @@ async fn mint(sub_account: Option<Subaccount>, block_height: BlockHeight) -> TxR
 
     let user_balance = balance_of(caller);
 
-    _insert_balance(caller, user_balance + value.clone());
-    STATS.with(|s| {
-        let mut stats = s.borrow_mut();
-        stats.total_supply += value.clone();
-        stats.history_size += 1;
-    });
+    _balance_ins(caller, user_balance + value.clone());
+
+    _supply_inc(value.clone());
+    _history_inc();
 
     add_record(
         Some(caller),
@@ -494,10 +496,9 @@ async fn mint_for(
     let value = Nat::from(Tokens::get_e8s(amount));
 
     let user_balance = balance_of(to_p);
-    _insert_balance(to_p, user_balance + value.clone());
-    let stats = ic::get_mut::<StatsData>();
-    stats.total_supply += value.clone();
-    stats.history_size += 1;
+    _balance_ins(to_p, user_balance + value.clone());
+    _supply_inc(value.clone());
+    _history_inc();
 
     add_record(
         Some(caller),
@@ -533,8 +534,8 @@ async fn withdraw(value: u64, to: String) -> TxReceipt {
         to: AccountIdentifier::from_hex(&to).unwrap(),
         created_at_time: None,
     };
-    _insert_balance(caller, caller_balance.clone() - value_nat.clone());
-    stats.total_supply -= value_nat.clone();
+    _balance_ins(caller, caller_balance.clone() - value_nat.clone());
+    _supply_dec(value_nat.clone());
     let result: Result<(u64,), _> = ic::call(
         Principal::from(CanisterId::get(LEDGER_CANISTER_ID)),
         "send_dfx",
@@ -557,8 +558,8 @@ async fn withdraw(value: u64, to: String) -> TxReceipt {
             .await
         }
         Err(_) => {
-            _insert_balance(caller, balance_of(caller) + value_nat.clone());
-            stats.total_supply += value_nat;
+            _balance_ins(caller, balance_of(caller) + value_nat.clone());
+            _supply_inc(value_nat);
             return Err(TxError::LedgerTrap);
         }
     }
@@ -781,7 +782,10 @@ fn set_owner(owner: Principal) {
 #[update(name = "setGenesis", guard = _is_auth)]
 #[candid_method(update, rename = "setGenesis")]
 async fn set_genesis() -> TxReceipt {
-    let genesis = ic::get::<Genesis>();
+    let mut genesis = Genesis::default();
+    GENESIS.with(|g| {
+        genesis = g.borrow().clone();
+    });
     add_record(
         genesis.caller,
         genesis.op,
@@ -814,14 +818,14 @@ pub fn tx_log<'a>() -> &'a mut TxLog {
     ic_kit::ic::get_mut::<TxLog>()
 }
 
-fn _insert_balance(from: Principal, value: Nat) {
+fn _balance_ins(from: Principal, value: Nat) {
     BALANCES.with(|b| {
         let mut balances = b.borrow_mut();
         balances.insert(from, value);
     });
 }
 
-fn _remove_balance(from: Principal) {
+fn _balance_rem(from: Principal) {
     BALANCES.with(|b| {
         let mut balances = b.borrow_mut();
         balances.remove(&from);
@@ -834,15 +838,36 @@ fn _transfer(from: Principal, to: Principal, value: Nat) {
 
     // TODO: check this logic ↴
     if from_balance_new != 0 {
-        _insert_balance(from, from_balance_new);
+        _balance_ins(from, from_balance_new);
     } else {
-        _remove_balance(from)
+        _balance_rem(from)
     }
     let to_balance = balance_of(to);
     let to_balance_new = to_balance + value;
     if to_balance_new != 0 {
-        _insert_balance(to, to_balance_new);
+        _balance_ins(to, to_balance_new);
     }
+}
+
+fn _supply_inc(value: Nat) {
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.total_supply += value;
+    })
+}
+
+fn _supply_dec(value: Nat) {
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.total_supply -= value;
+    })
+}
+
+fn _history_inc() {
+    STATS.with(|s| {
+        let mut stats = s.borrow_mut();
+        stats.history_size += 1;
+    })
 }
 
 fn _charge_fee(user: Principal) {
@@ -852,13 +877,6 @@ fn _charge_fee(user: Principal) {
             _transfer(user, stats.fee_to, stats.fee.clone());
         }
     });
-}
-
-fn _history_inc() {
-    STATS.with(|s| {
-        let mut stats = s.borrow_mut();
-        stats.history_size += 1;
-    })
 }
 
 fn _get_fee() -> Nat {
