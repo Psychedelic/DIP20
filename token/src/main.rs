@@ -1,6 +1,6 @@
 /**
 * Module     : main.rs
-* Copyright  : 2021 Psychedelic
+* Copyright  : 2022 Psychedelic
 * License    : Apache 2.0 with LLVM Exception
 * Maintainer : Ossian Mapes <oz@fleek.co>
 * Stability  : Experimental
