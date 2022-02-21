@@ -817,10 +817,6 @@ fn _is_auth() -> Result<(), String> {
     })
 }
 
-pub fn tx_log<'a>() -> &'a mut TxLog {
-    ic_kit::ic::get_mut::<TxLog>()
-}
-
 fn _balance_ins(from: Principal, value: Nat) {
     BALANCES.with(|b| {
         let mut balances = b.borrow_mut();
@@ -932,11 +928,14 @@ async fn add_record(
 }
 
 pub async fn insert_into_cap(ie: IndefiniteEvent) -> TxReceipt {
-    let tx_log = tx_log();
-    if let Some(failed_ie) = tx_log.ie_records.pop_front() {
-        let _ = insert_into_cap_priv(failed_ie).await;
-    }
-    insert_into_cap_priv(ie).await
+    let mut event = ie;
+    TXLOG.with(|t| {
+        let mut tx_log = t.borrow_mut();
+        if let Some(failed_ie) = tx_log.ie_records.pop_front() {
+            event = failed_ie;
+        }
+    });
+    insert_into_cap_priv(event).await
 }
 
 async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
@@ -946,7 +945,10 @@ async fn insert_into_cap_priv(ie: IndefiniteEvent) -> TxReceipt {
         .map_err(|_| TxError::Other);
 
     if insert_res.is_err() {
-        tx_log().ie_records.push_back(ie.clone());
+        TXLOG.with(|t| {
+            let mut tx_log = t.borrow_mut();
+            tx_log.ie_records.push_back(ie.clone());
+        });
     }
 
     insert_res
@@ -971,7 +973,7 @@ fn pre_upgrade() {
         ic::get::<Balances>(),
         ic::get::<Allowances>(),
         ic::get::<UsedBlocks>(),
-        tx_log(),
+        ic::get_mut::<TxLog>(),
         CapEnv::to_archive(),
     ))
     .unwrap();
@@ -999,7 +1001,7 @@ fn post_upgrade() {
     let blocks = ic::get_mut::<UsedBlocks>();
     *blocks = blocks_stored;
 
-    let tx_log = tx_log();
+    let tx_log = ic::get_mut::<TxLog>();
     *tx_log = tx_log_stored;
 
     CapEnv::load_from_archive(cap_env);
