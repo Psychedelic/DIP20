@@ -19,7 +19,7 @@ use ledger_canister::{
     tokens::Tokens,
     BlockHeight, BlockRes, Memo, Operation as Operate, SendArgs,
 };
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::Into;
 use std::iter::FromIterator;
@@ -673,17 +673,20 @@ fn history_size() -> usize {
 #[query(name = "getTokenInfo")]
 #[candid_method(query, rename = "getTokenInfo")]
 fn get_token_info() -> TokenInfo {
-    let stats = ic::get::<StatsData>().clone();
-    let balance = ic::get::<Balances>();
-
-    return TokenInfo {
-        metadata: get_metadata(),
-        feeTo: stats.fee_to,
-        historySize: stats.history_size,
-        deployTime: stats.deploy_time,
-        holderNumber: balance.len(),
-        cycles: ic::balance(),
-    };
+    STATS.with(|s| {
+        let stats = s.borrow();
+        BALANCES.with(|b| {
+            let balance = b.borrow();
+            TokenInfo {
+                metadata: get_metadata(),
+                feeTo: stats.fee_to,
+                historySize: stats.history_size,
+                deployTime: stats.deploy_time,
+                holderNumber: balance.len(),
+                cycles: ic::balance(),
+            }
+        })
+    })
 }
 
 #[query(name = "getHolders")]
