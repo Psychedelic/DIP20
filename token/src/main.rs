@@ -135,6 +135,7 @@ thread_local! {
     /*    stable    */
     static BALANCES: RefCell<HashMap<Principal, Nat>> = RefCell::new(HashMap::default());
     static ALLOWS: RefCell<HashMap<Principal, HashMap<Principal, Nat>>> = RefCell::new(HashMap::default());
+    static BLOCKS: RefCell<HashSet<BlockHeight>> = RefCell::new(HashSet::default());
     static STATS: RefCell<StatsData> = RefCell::new(StatsData::default());
     static TXLOG: RefCell<TxLog> = RefCell::new(TxLog::default());
     static GENESIS: RefCell<Genesis> = RefCell::new(Genesis::default());
@@ -370,48 +371,50 @@ async fn mint(sub_account: Option<Subaccount>, block_height: BlockHeight) -> TxR
             return Err(TxError::ErrorOperationStyle);
         }
     };
+    match BLOCKS.with(|b| {
+        let mut blocks = b.borrow_mut();
+        assert_eq!(blocks.insert(block_height), true);
 
-    let blocks = ic::get_mut::<UsedBlocks>();
-    assert_eq!(blocks.insert(block_height), true);
+        let caller_pid = PrincipalId::from(caller);
+        let caller_account = AccountIdentifier::new(caller_pid, sub_account);
 
-    let caller_pid = PrincipalId::from(caller);
-    let caller_account = AccountIdentifier::new(caller_pid, sub_account);
+        if caller_account != from {
+            blocks.remove(&block_height);
+            return Err(TxError::Unauthorized);
+        }
 
-    if caller_account != from {
-        blocks.remove(&block_height);
-        return Err(TxError::Unauthorized);
+        if AccountIdentifier::new(PrincipalId::from(ic::id()), None) != to {
+            blocks.remove(&block_height);
+            return Err(TxError::ErrorTo);
+        }
+
+        if amount < THRESHOLD {
+            blocks.remove(&block_height);
+            return Err(TxError::AmountTooSmall);
+        }
+        return Ok(());
+    }) {
+        Err(err) => return Err(err),
+        _ => {
+            let value = Nat::from(Tokens::get_e8s(amount));
+
+            let user_balance = balance_of(caller);
+            _balance_ins(caller, user_balance + value.clone());
+            _supply_inc(value.clone());
+            _history_inc();
+            add_record(
+                Some(caller),
+                Operation::Mint,
+                caller,
+                caller,
+                value,
+                Nat::from(0),
+                ic::time(),
+                TransactionStatus::Succeeded,
+            )
+            .await
+        }
     }
-
-    if AccountIdentifier::new(PrincipalId::from(ic::id()), None) != to {
-        blocks.remove(&block_height);
-        return Err(TxError::ErrorTo);
-    }
-
-    if amount < THRESHOLD {
-        blocks.remove(&block_height);
-        return Err(TxError::AmountTooSmall);
-    }
-
-    let value = Nat::from(Tokens::get_e8s(amount));
-
-    let user_balance = balance_of(caller);
-
-    _balance_ins(caller, user_balance + value.clone());
-
-    _supply_inc(value.clone());
-    _history_inc();
-
-    add_record(
-        Some(caller),
-        Operation::Mint,
-        caller,
-        caller,
-        value,
-        Nat::from(0),
-        ic::time(),
-        TransactionStatus::Succeeded,
-    )
-    .await
 }
 
 #[update(name = "mintFor")]
@@ -474,46 +477,50 @@ async fn mint_for(
             return Err(TxError::ErrorOperationStyle);
         }
     };
+    match BLOCKS.with(|b| {
+        let mut blocks = b.borrow_mut();
+        assert_eq!(blocks.insert(block_height), true);
 
-    let blocks = ic::get_mut::<UsedBlocks>();
-    assert_eq!(blocks.insert(block_height), true);
+        let to_pid = PrincipalId::from(to_p);
+        let to_account = AccountIdentifier::new(to_pid, sub_account);
 
-    let to_pid = PrincipalId::from(to_p);
-    let to_account = AccountIdentifier::new(to_pid, sub_account);
+        if to_account != from {
+            blocks.remove(&block_height);
+            return Err(TxError::Unauthorized);
+        }
 
-    if to_account != from {
-        blocks.remove(&block_height);
-        return Err(TxError::Unauthorized);
+        if AccountIdentifier::new(PrincipalId::from(ic::id()), None) != to {
+            blocks.remove(&block_height);
+            return Err(TxError::ErrorTo);
+        }
+
+        if amount < THRESHOLD {
+            blocks.remove(&block_height);
+            return Err(TxError::AmountTooSmall);
+        }
+        return Ok(());
+    }) {
+        Err(err) => return Err(err),
+        _ => {
+            let value = Nat::from(Tokens::get_e8s(amount));
+
+            let user_balance = balance_of(to_p);
+            _balance_ins(to_p, user_balance + value.clone());
+            _supply_inc(value.clone());
+            _history_inc();
+            add_record(
+                Some(caller),
+                Operation::Mint,
+                to_p,
+                to_p,
+                value,
+                Nat::from(0),
+                ic::time(),
+                TransactionStatus::Succeeded,
+            )
+            .await
+        }
     }
-
-    if AccountIdentifier::new(PrincipalId::from(ic::id()), None) != to {
-        blocks.remove(&block_height);
-        return Err(TxError::ErrorTo);
-    }
-
-    if amount < THRESHOLD {
-        blocks.remove(&block_height);
-        return Err(TxError::AmountTooSmall);
-    }
-
-    let value = Nat::from(Tokens::get_e8s(amount));
-
-    let user_balance = balance_of(to_p);
-    _balance_ins(to_p, user_balance + value.clone());
-    _supply_inc(value.clone());
-    _history_inc();
-
-    add_record(
-        Some(caller),
-        Operation::Mint,
-        to_p,
-        to_p,
-        value,
-        Nat::from(0),
-        ic::time(),
-        TransactionStatus::Succeeded,
-    )
-    .await
 }
 
 #[update(name = "withdraw")]
@@ -571,23 +578,27 @@ async fn withdraw(value: u64, to: String) -> TxReceipt {
 #[query(name = "balanceOf")]
 #[candid_method(query, rename = "balanceOf")]
 fn balance_of(id: Principal) -> Nat {
-    let balances = ic::get::<Balances>();
-    match balances.get(&id) {
-        Some(balance) => balance.clone(),
-        None => Nat::from(0),
-    }
+    BALANCES.with(|b| {
+        let balances = b.borrow();
+        match balances.get(&id) {
+            Some(balance) => balance.clone(),
+            None => Nat::from(0),
+        }
+    })
 }
 
 #[query(name = "allowance")]
 #[candid_method(query)]
 fn allowance(owner: Principal, spender: Principal) -> Nat {
-    let allowances = ic::get::<Allowances>();
-    allowances
-        .get(&owner)
-        .unwrap_or(&HashMap::new())
-        .get(&spender)
-        .unwrap_or(&Nat::from(0))
-        .clone()
+    ALLOWS.with(|a| {
+        let allowances = a.borrow();
+        allowances
+            .get(&owner)
+            .unwrap_or(&HashMap::new())
+            .get(&spender)
+            .unwrap_or(&Nat::from(0))
+            .clone()
+    })
 }
 
 #[query]
@@ -692,50 +703,57 @@ fn get_token_info() -> TokenInfo {
 #[query(name = "getHolders")]
 #[candid_method(query, rename = "getHolders")]
 fn get_holders(start: usize, limit: usize) -> Vec<(Principal, Nat)> {
-    let mut balance = Vec::new();
-    for (k, v) in ic::get::<Balances>().clone() {
-        balance.push((k, v.clone()));
-    }
-    balance.sort_by(|a, b| b.1.cmp(&a.1));
-    let limit: usize = if start + limit > balance.len() {
-        balance.len() - start
-    } else {
-        limit
-    };
-    balance[start..start + limit].to_vec()
+    BALANCES.with(|b| {
+        let balances = b.borrow();
+        let mut bal = Vec::new();
+        for (k, v) in balances.clone() {
+            bal.push((k, v.clone()));
+        }
+        bal.sort_by(|a, b| b.1.cmp(&a.1));
+        let limit: usize = if start + limit > bal.len() {
+            bal.len() - start
+        } else {
+            limit
+        };
+        bal[start..start + limit].to_vec()
+    })
 }
 
 #[query(name = "getAllowanceSize")]
 #[candid_method(query, rename = "getAllowanceSize")]
 fn get_allowance_size() -> usize {
-    let mut size = 0;
-    let allowances = ic::get::<Allowances>();
-    for (_, v) in allowances.iter() {
-        size += v.len();
-    }
-    size
+    ALLOWS.with(|a| {
+        let allowances = a.borrow();
+        let mut size = 0;
+        for (_, v) in allowances.iter() {
+            size += v.len();
+        }
+        size
+    })
 }
 
 #[query(name = "getUserApprovals")]
 #[candid_method(query, rename = "getUserApprovals")]
 fn get_user_approvals(who: Principal) -> Vec<(Principal, Nat)> {
-    let allowances = ic::get::<Allowances>();
-    match allowances.get(&who) {
-        Some(allow) => return Vec::from_iter(allow.clone().into_iter()),
-        None => return Vec::new(),
-    }
+    ALLOWS.with(|a| {
+        let allowances = a.borrow();
+        match allowances.get(&who) {
+            Some(allow) => return Vec::from_iter(allow.clone().into_iter()),
+            None => return Vec::new(),
+        }
+    })
 }
 
 #[query(name = "getBlockUsed")]
 #[candid_method(query, rename = "getBlockUsed")]
 fn get_block_used() -> HashSet<u64> {
-    ic::get::<UsedBlocks>().clone()
+    BLOCKS.with(|b| b.borrow().clone())
 }
 
 #[query(name = "isBlockUsed")]
 #[candid_method(query, rename = "isBlockUsed")]
 fn is_block_used(block_number: BlockHeight) -> bool {
-    ic::get::<UsedBlocks>().contains(&block_number)
+    BLOCKS.with(|b| b.borrow().clone().contains(&block_number))
 }
 
 /* PERMISSIONED FNS */
