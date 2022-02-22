@@ -1,5 +1,10 @@
 #!/bin/bash
 
+printf "DIP20 Copyright (C) 2022 Fleek LLC
+    This program comes with ABSOLUTELY NO WARRANTY
+    This is free software, and you are welcome to redistribute it
+    under certain conditions;\n\n"
+
 dfxDir="/home/dan/.config/dfx"
 candidDir="/home/dan/dev/psy/ic-token/rust"
 
