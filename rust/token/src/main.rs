@@ -440,14 +440,14 @@ fn get_holders(start: usize, limit: usize) -> Vec<(Principal, Nat)> {
     for (k, v) in balances.iter() {
       balance.push((k.clone(), v.clone()));
     }
-  });
-  balance.sort_by(|a, b| b.1.cmp(&a.1));
-  let limit: usize = if start + limit > balance.len() {
-    balance.len() - start
-  } else {
-    limit
-  };
-  balance[start..start + limit].to_vec()
+    balance.sort_by(|a, b| b.1.cmp(&a.1));
+    let limit: usize = if start + limit > balance.len() {
+      balance.len() - start
+    } else {
+      limit
+    };
+    balance[start..start + limit].to_vec()
+  })
 }
 
 #[query(name = "getAllowanceSize")]
