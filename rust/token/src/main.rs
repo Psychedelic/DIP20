@@ -6,6 +6,7 @@
 * Stability  : Experimental
 */
 use candid::{candid_method, CandidType, Deserialize, Int, Nat};
+use cap_sdk::{archive, from_archive, Archive};
 use cap_sdk::{handshake, insert, Event, IndefiniteEvent, TypedEvent};
 use cap_std::dip20::cap::DIP20Details;
 use cap_std::dip20::{Operation, TransactionStatus, TxRecord};
@@ -641,16 +642,18 @@ fn pre_upgrade() {
   let balances = BALANCES.with(|b| b.borrow().clone());
   let allows = ALLOWS.with(|a| a.borrow().clone());
   let tx_log = TXLOG.with(|t| t.borrow().clone());
-  ic::stable_store((stats, balances, allows, tx_log)).unwrap();
+  let cap = archive();
+  ic::stable_store((stats, balances, allows, tx_log, cap)).unwrap();
 }
 
 #[post_upgrade]
 fn post_upgrade() {
-  let (metadata_stored, balances_stored, allowances_stored, tx_log_stored): (
+  let (metadata_stored, balances_stored, allowances_stored, tx_log_stored, cap_store): (
     StatsData,
     Balances,
     Allowances,
     TxLog,
+    Archive,
   ) = ic::stable_restore().unwrap();
   STATS.with(|s| {
     let mut stats = s.borrow_mut();
@@ -668,6 +671,7 @@ fn post_upgrade() {
     let mut tx_log = t.borrow_mut();
     *tx_log = tx_log_stored;
   });
+  from_archive(cap_store);
 }
 
 async fn add_record(
